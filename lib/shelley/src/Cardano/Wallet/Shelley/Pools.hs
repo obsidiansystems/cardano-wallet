@@ -59,12 +59,7 @@ import Cardano.Wallet.Api.Types
 import Cardano.Wallet.Byron.Compatibility
     ( toByronBlockHeader )
 import Cardano.Wallet.Network
-    ( FollowAction (..)
-    , FollowExceptionRecovery (..)
-    , FollowLog (MsgFollowLog)
-    , NetworkLayer (..)
-    , follow
-    )
+    ( ChainFollower (..), FollowLog (..), NetworkLayer (..) )
 import Cardano.Wallet.Primitive.Slotting
     ( PastHorizonException (..)
     , TimeInterpreter
@@ -107,7 +102,6 @@ import Cardano.Wallet.Shelley.Compatibility
     , fromMaryBlock
     , fromShelleyBlock
     , getProducer
-    , toCardanoBlockHeader
     , toShelleyBlockHeader
     )
 import Cardano.Wallet.Unsafe
@@ -548,9 +542,17 @@ monitorStakePools followTr (NetworkParameters gp sp _pp) nl DBLayer{..} =
                     -- return it.
                     return $ Right slot
 
-            follow nl followTr
-                initCursor rollForward rollback
-                AbortOnExceptions getHeader
+            chainSync nl followTr $ ChainFollower
+                -- TODO: Is it better to have /one/ (\tr -> ChainFollower),
+                -- instead of getting the tracer in each field?
+                { readLocalTip = \_tr -> initCursor
+                , rollForward = \tr tip blocks ->
+                    rollForward
+                        (NE.fromList blocks)
+                        tip
+                        (contramap MsgFollowLog tr)
+                , rollBackward = \_tr -> fmap (either (error "todo") id) . rollback
+                }
 
     GenesisParameters  { getGenesisBlockHash  } = gp
     SlottingParameters { getSecurityParameter } = sp
@@ -571,18 +573,14 @@ monitorStakePools followTr (NetworkParameters gp sp _pp) nl DBLayer{..} =
     initCursor = atomically $ listHeaders (max 100 k)
       where k = fromIntegral $ getQuantity getSecurityParameter
 
-    getHeader :: CardanoBlock StandardCrypto -> BlockHeader
-    getHeader = toCardanoBlockHeader gp
-
     forward
         :: IORef EpochNo
         -> NonEmpty (CardanoBlock StandardCrypto)
         -> BlockHeader
         -> Tracer IO StakePoolLog
-        -> IO (FollowAction Void)
+        -> IO ()
     forward latestGarbageCollectionEpochRef blocks _ tr = do
         atomically $ forAllAndLastM blocks forAllBlocks forLastBlock
-        return Continue
       where
         forAllBlocks = \case
             BlockByron _ -> do
