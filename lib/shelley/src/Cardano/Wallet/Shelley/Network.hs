@@ -204,7 +204,7 @@ import Ouroboros.Consensus.Node.NetworkProtocolVersion
 import Ouroboros.Consensus.Shelley.Ledger.Config
     ( CodecConfig (..), getCompactGenesis )
 import Ouroboros.Network.Block
-    ( Point, SlotNo (..), Tip (..), blockPoint, getPoint )
+    ( Point, Tip (..), blockPoint, getPoint )
 import Ouroboros.Network.Client.Wallet
     ( LSQ (..)
     , LocalStateQueryCmd (..)
