@@ -721,7 +721,7 @@ addFollowerLogging cf = ChainFollower
     { readLocalTip = \tr -> do
         readLocalTip cf tr
     , rollForward = \tr tip blocks -> do
-        traceWith tr $ MsgApplyBlocks tip (NE.fromList $ map undefined blocks) -- FIXME NE
+        -- traceWith tr $ MsgApplyBlocks tip (NE.fromList $ map undefined blocks) -- FIXME NE
         traceWith tr $ MsgFollowerTip (Just tip)
         rollForward cf tr tip blocks
     , rollBackward = \tr slot -> do
