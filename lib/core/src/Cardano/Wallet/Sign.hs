@@ -10,6 +10,23 @@
 --     ∀tx (f :: Sign era -> Sign era)
 --     . getTxWitnesses tx
 --       ⊆ getTxWitnesses (toSigned (f (fromSigned tx)))
+--
+-- sign/fromSigned/toSigned/noop:
+--     ∀tx. toSigned (fromSigned tx) = tx
+-- sign/addWitness/alwaysAdds:
+--     ∀ws x. addWitness w x ≠ x
+-- sign/addWitnesses/empty-is-noop:
+--     ∀ws x. addWitnesses [] x = x
+-- sign/addWitnesses/addWitness:
+--     ∀ws x. addWitnesses ws x = foldr (.) id (fmap addWitness ws) x
+-- sign/fromSigned/fromUnsigned:
+--     ∀tx. fromSigned tx = fromUnsigned (getTxBody tx)
+--                          & addWitnesses (getTxWitnesses tx)
+-- sign/fromUnsigned/fromSigned:
+--     ∀txBody. fromUnsigned txBody = fromSigned $ Tx txBody []
+-- sign/addWitnesses:
+--     ∀ws' x. toSigned (addWitnesses ws' x)
+--             = (\(Tx txBody ws) -> Tx txBody (ws <> ws')) $ toSigned x
 module Cardano.Wallet.Sign
     (
     -- * Abstract algebra type
@@ -54,12 +71,3 @@ instance Show (Sign era) where
 
 instance Eq (Sign era) where
     a == b = toSigned a == toSigned b
-
--- ∀tx. toSigned (fromSigned tx) = tx
--- ∀ws x. addWitness w x ≠ x
--- ∀ws x. addWitnesses [] x = x
--- ∀ws x. addWitnesses ws x = foldr (.) id (fmap addWitness ws) x
--- ∀tx. fromSigned tx = fromUnsigned (getTxBody tx)
---                      & addWitnesses (getTxWitnesses tx)
--- ∀txBody. fromUnsigned txBody = fromSigned $ Tx txBody []
--- ∀ws' x. toSigned (addWitnesses ws' x) = (\(Tx txBody ws) -> Tx txBody (ws <> ws')) $ toSigned x
