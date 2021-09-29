@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+
 module Cardano.Wallet.SignSpec
     ( spec
     ) where
@@ -21,11 +23,12 @@ import Cardano.Api.Typed.Gen
 import Cardano.Wallet.Sign
 import Cardano.Wallet.Sign.Gen
 
+import qualified Data.List as List
 import qualified Data.Set as Set
 
 spec :: Spec
 spec = do
-    parallel $ describe "Additive sign algebra" $ do
+    parallel $ describe "Additive witness algebra" $ do
         it "sign/witnesses-preserved"
             prop_sign_witnessesPreserved
         it "sign/fromSigned/toSigned/no-op"
@@ -40,8 +43,12 @@ spec = do
             prop_sign_fromSigned_fromUnsigned
         it "sign/fromUnsigned/fromSigned"
             prop_sign_fromUnsigned_fromSigned
-        it "sign/addWitnesses"
-            prop_sign_addWitnesses
+        it "sign/addWitnesses/increases-number-of-witnesses"
+            prop_sign_addWitness_increases_number_of_witnesses
+        it "sign/addWitnesses/adds-a-witness"
+            prop_sign_addWitness_adds_a_witness
+        it "sign/never-modifies-tx-body"
+            prop_sign_never_modifies_tx_body
 
 prop_sign_witnessesPreserved :: Property
 prop_sign_witnessesPreserved = property $
@@ -90,9 +97,29 @@ prop_sign_fromUnsigned_fromSigned = property $
     forAll (hedgehog $ genTxBody ShelleyEra) $ \txBody ->
         fromUnsigned txBody == fromSigned (Tx txBody [])
 
-prop_sign_addWitnesses :: Property
-prop_sign_addWitnesses = property $
+prop_sign_addWitness_increases_number_of_witnesses :: Property
+prop_sign_addWitness_increases_number_of_witnesses = property $
     forAll (hedgehog $ genSign ShelleyEra) $ \x ->
-    forAll (hedgehog $ genWitnesses ShelleyEra) $ \ws' ->
-        toSigned (addWitnesses ws' x)
-        == ((\(Tx txBody ws) -> Tx txBody (ws <> ws')) $ toSigned x)
+    forAll (hedgehog $ genWitness ShelleyEra) $ \w ->
+        numWitnesses (addWitness w x) == numWitnesses x + 1
+    where
+        numWitnesses :: forall era. Sign era -> Int
+        numWitnesses = length . getTxWitnesses . toSigned
+
+prop_sign_addWitness_adds_a_witness :: Property
+prop_sign_addWitness_adds_a_witness = property $
+    forAll (hedgehog $ genSign ShelleyEra) $ \x ->
+    forAll (hedgehog $ genWitness ShelleyEra) $ \w ->
+        getWitnesses (addWitness w x) List.\\ getWitnesses x == [w]
+
+    where
+        getWitnesses = getTxWitnesses . toSigned
+
+prop_sign_never_modifies_tx_body :: Property
+prop_sign_never_modifies_tx_body = property $
+    forAll (hedgehog $ genSign ShelleyEra) $ \x ->
+    forAll (hedgehog $ genOperation ShelleyEra) $ \signOp ->
+        let
+            op = doOperation signOp
+        in
+            getTxBody (toSigned (op x)) == getTxBody (toSigned x)

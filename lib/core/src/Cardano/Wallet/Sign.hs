@@ -24,9 +24,15 @@
 --                          & addWitnesses (getTxWitnesses tx)
 -- sign/fromUnsigned/fromSigned:
 --     ∀txBody. fromUnsigned txBody = fromSigned $ Tx txBody []
--- sign/addWitnesses:
---     ∀ws' x. toSigned (addWitnesses ws' x)
---             = (\(Tx txBody ws) -> Tx txBody (ws <> ws')) $ toSigned x
+-- sign/addWitness/increases-number-of-witnesses
+--     ∀w x. length (getTxWitnesses (toSigned (addWitness w x)))
+--           = length (getTxWitnesses (toSigned x)) + 1
+-- sign/addWitness/adds-a-witness
+--     ∀w x. getTxWitnesses (toSigned (addWitness w x))
+--           `diff` getTxWitnesses (toSigned x)
+--           = [w]
+-- sign/never-modifies-tx-body
+--     ∀f x. getTxBody (toSigned (f x)) = getTxBody (toSigned x)
 module Cardano.Wallet.Sign
     (
     -- * Abstract algebra type
@@ -69,5 +75,6 @@ toSigned (Sign tx) = tx
 instance Show (Sign era) where
     show = show . toSigned
 
+-- TODO equality laws
 instance Eq (Sign era) where
     a == b = toSigned a == toSigned b
