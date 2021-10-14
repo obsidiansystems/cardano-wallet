@@ -47,7 +47,7 @@ import Cardano.Slotting.Slot
 import Cardano.Wallet.Network
     ( ChainFollower (..), ChainSyncLog (..) )
 import Control.Monad
-    ( ap, liftM, unless )
+    ( ap, liftM )
 import Control.Monad.Class.MonadSTM
     ( MonadSTM
     , TQueue
@@ -618,7 +618,7 @@ localTxSubmission
 localTxSubmission queue = LocalTxSubmissionClient clientStIdle
   where
     clientStIdle
-        :: m (LocalTxClientStIdle tx err m Void)
+        :: m (LocalTxClientStIdle tx err m ())
     clientStIdle = atomically (peekTQueue queue) <&> \case
         CmdSubmitTx tx respond ->
             SendMsgSubmitTx tx $ \res -> do

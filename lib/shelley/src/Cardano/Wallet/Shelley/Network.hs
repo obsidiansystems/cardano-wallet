@@ -87,6 +87,7 @@ import Cardano.Wallet.Shelley.Compatibility
     ( StandardCrypto
     , fromAlonzoPParams
     , fromCardanoHash
+    , fromLedgerPParams
     , fromNonMyopicMemberRewards
     , fromPoolDistr
     , fromShelleyCoin
@@ -445,7 +446,7 @@ withNetworkLayerBase tr net np conn versionData tol action = do
     -- all form of type-level indicator about the era. The 'SealedTx' type
     -- shouldn't be needed anymore since we've dropped jormungandr, so we could
     -- instead carry a transaction from cardano-api types with proper typing.
-    _postTx localTxSubmissionQ era tx = do
+    _postTx localTxSubmissionQ tx = do
         liftIO $ traceWith tr $ MsgPostTx tx
         let cmd = CmdSubmitTx $ unsealShelleyTx tx
         liftIO (localTxSubmissionQ `send` cmd) >>= \case
@@ -1072,6 +1073,20 @@ connectClient tr handlers client vData conn = withIOManager $ \iocp -> do
             }
     let socket = localSnocket iocp (nodeSocketFile conn)
     flip withException (print @SomeException) $ recovering policy (coerceHandlers handlers) $ \status -> do
+        traceWith tr $ MsgCouldntConnect (rsIterNumber status)
+        connectTo socket tracers versions (nodeSocketFile conn)
+  where
+    -- .25s -> .25s -> .5s → .75s → 1.25s → 2s
+    policy :: RetryPolicyM IO
+    policy = fibonacciBackoff 250_000 & capDelay 2_000_000
+
+recoveringNodeConnection
+    :: Tracer IO NetworkLayerLog
+    -> RetryHandlers
+    -> IO a
+    -> IO a
+recoveringNodeConnection tr handlers action =
+    recovering policy (coerceHandlers handlers) $ \status -> do
         traceWith tr $ MsgCouldntConnect (rsIterNumber status)
         action
   where
