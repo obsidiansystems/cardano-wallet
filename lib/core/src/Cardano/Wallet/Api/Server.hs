@@ -2435,8 +2435,8 @@ decodeTransaction ctx _wid (ApiSerialisedTransaction (ApiT sealed)) = do
         , fee = fromMaybe (Quantity 0) (Quantity . fromIntegral . unCoin <$> feeM)
         , inputs = map toInp inps
         , outputs = map (toAddressAmount @n) outs
-        , collateral =map toInp colls
-        , withdrawals = []
+        , collateral = map toInp colls
+        , withdrawals = map toWrdl $ Map.assocs wdrlMap
         , metadata = ApiTxMetadata $ ApiT <$> meta
         , scriptValidity = Nothing
         }
@@ -2444,6 +2444,8 @@ decodeTransaction ctx _wid (ApiSerialisedTransaction (ApiT sealed)) = do
     tl = ctx ^. W.transactionLayer @k
     toInp (txin, Coin c) =
         ExternalInput (ApiT txin, Quantity $ fromIntegral c)
+    toWrdl (rewardKey, (Coin c)) =
+        ApiWithdrawal (ApiT rewardKey, Proxy @n) (Quantity $ fromIntegral c)
 
 joinStakePool
     :: forall ctx s n k.
