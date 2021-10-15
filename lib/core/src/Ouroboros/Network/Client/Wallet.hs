@@ -269,12 +269,11 @@ data LocalRollbackResult block
 --      *------*
 --
 chainSyncWithBlocks
-    :: forall m block followerTr. (Monad m, MonadSTM m, HasHeader block)
+    :: forall m block. (Monad m, MonadSTM m, HasHeader block)
     => Tracer m (ChainSyncLog block (Point block))
-    -> followerTr
-    -> ChainFollower m (Point block) (Tip block) block followerTr
+    -> ChainFollower m (Point block) (Tip block) block
     -> ChainSyncClientPipelined block (Point block) (Tip block) m Void
-chainSyncWithBlocks tr followerTr cf =
+chainSyncWithBlocks tr cf =
     ChainSyncClientPipelined clientStNegotiateIntersection
   where
     -- Return the _number of slots between two tips.
@@ -292,7 +291,7 @@ chainSyncWithBlocks tr followerTr cf =
     clientStNegotiateIntersection
         :: m (P.ClientPipelinedStIdle 'Z block (Point block) (Tip block) m Void)
     clientStNegotiateIntersection = do
-        points <- readLocalTip cf followerTr
+        points <- readLocalTip cf
         if null points
         then clientStIdle oneByOne
         else pure $ P.SendMsgFindIntersect
@@ -320,7 +319,7 @@ chainSyncWithBlocks tr followerTr cf =
         :: RequestNextStrategy m 'Z block
         -> m (P.ClientPipelinedStIdle 'Z block (Point block) (Tip block) m Void)
     clientStIdle strategy =
-        pure $ strategy (rollForward cf followerTr)
+        pure $ strategy (rollForward cf)
 
 
     -- Simple strategy that sends a request and waits for an answer.
@@ -369,7 +368,7 @@ chainSyncWithBlocks tr followerTr cf =
                 Buffer xs -> do
                     traceWith tr $ MsgChainRollBackward point (length xs)
                     let blocks' = reverse xs
-                    rollForward cf followerTr tip blocks'
+                    rollForward cf tip blocks'
                     clientStIdle oneByOne
                 FollowerExact -> do
                     clientStIdle oneByOne
@@ -398,7 +397,7 @@ chainSyncWithBlocks tr followerTr cf =
                 [] -> do -- b)
                     traceWith tr $ MsgChainRollBackward point 0
                     let slot = pseudoPointSlot point
-                    actual <- rollBackward cf followerTr slot
+                    actual <- rollBackward cf slot
                     if actual == slot
                     then pure FollowerExact
                     else do

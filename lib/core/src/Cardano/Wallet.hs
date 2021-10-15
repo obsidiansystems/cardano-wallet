@@ -871,13 +871,13 @@ restoreWallet
     -> ExceptT ErrNoSuchWallet IO ()
 restoreWallet ctx wid = db & \DBLayer{..} -> do
     liftIO $ chainSync nw tr' $ ChainFollower
-        { readLocalTip = \_tr ->
+        { readLocalTip =
             liftIO $ atomically $ listCheckpoints wid
-        , rollForward = \tr tip blocks -> throwInIO $
+        , rollForward = \tip blocks -> throwInIO $
             -- FIXME: NE.fromList
             restoreBlocks @ctx @s @k
-                ctx (contramap MsgFollowLog tr) wid (NE.fromList blocks) tip
-        , rollBackward = \_tr ->
+                ctx (contramap MsgFollowLog tr') wid (NE.fromList blocks) tip
+        , rollBackward =
             throwInIO . rollbackBlocks @ctx @s @k ctx wid
         }
     --liftIO $ follow nw tr readCps forward backward RetryOnExceptions (view #header)

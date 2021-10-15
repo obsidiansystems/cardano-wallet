@@ -351,7 +351,7 @@ withNetworkLayerBase tr net np conn versionData tol action = do
                         (toPoint getGenesisBlockHash)
                         (fromTip' gp)
                         id
-                        (addFollowerLogging follower))
+                        (addFollowerLogging followTr follower))
                     cfg
                 connectClient tr handlers client versionData conn
 
@@ -588,7 +588,6 @@ mkWalletClient
         (Point (CardanoBlock StandardCrypto))
         (Tip (CardanoBlock StandardCrypto))
         (CardanoBlock StandardCrypto)
-        (Tracer m (FollowLog msg))
     -> CodecConfig (CardanoBlock StandardCrypto)
     -> m (NetworkClient m)
 mkWalletClient tr follower cfg = do
@@ -599,7 +598,6 @@ mkWalletClient tr follower cfg = do
                 $ chainSyncClientPeerPipelined
                 $ chainSyncWithBlocks
                     (contramap (MsgChainSync . mapChainSyncLog showB showP) tr)
-                    tr
                     follower
 
         , localTxSubmissionProtocol =

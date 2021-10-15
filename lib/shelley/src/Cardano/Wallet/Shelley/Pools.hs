@@ -533,6 +533,8 @@ monitorStakePools
 monitorStakePools followTr (NetworkParameters gp sp _pp) nl DBLayer{..} =
     monitor =<< mkLatestGarbageCollectionEpochRef
   where
+    innerTr = contramap MsgFollowLog followTr
+
     monitor latestGarbageCollectionEpochRef = do
             let rollForward = forward latestGarbageCollectionEpochRef
 
@@ -543,15 +545,9 @@ monitorStakePools followTr (NetworkParameters gp sp _pp) nl DBLayer{..} =
                     return $ Right slot
 
             chainSync nl followTr $ ChainFollower
-                -- TODO: Is it better to have /one/ (\tr -> ChainFollower),
-                -- instead of getting the tracer in each field?
-                { readLocalTip = \_tr -> initCursor
-                , rollForward = \tr tip blocks ->
-                    rollForward
-                        (NE.fromList blocks)
-                        tip
-                        (contramap MsgFollowLog tr)
-                , rollBackward = \_tr -> fmap (either (error "todo") id) . rollback
+                { readLocalTip = initCursor
+                , rollForward = \tip blocks -> rollForward (NE.fromList blocks) tip innerTr
+                , rollBackward = fmap (either (error "todo") id) . rollback
                 }
 
     GenesisParameters  { getGenesisBlockHash  } = gp

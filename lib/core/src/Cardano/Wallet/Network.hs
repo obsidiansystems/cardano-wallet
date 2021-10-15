@@ -111,7 +111,6 @@ data NetworkLayer m block = NetworkLayer
             BlockHeader
             BlockHeader
             block
-            (Tracer IO (FollowLog msg))
         -> IO ()
 
     , currentNodeTip
@@ -376,8 +375,8 @@ instance ToText ErrPostTx where
 --            step hrf cursor'
 --
 
-data ChainFollower m point tip block tr = ChainFollower
-    { readLocalTip :: tr -> m [point]
+data ChainFollower m point tip block = ChainFollower
+    { readLocalTip :: m [point]
         -- ^ Callback for reading the local tip. Used to negotiate the
         -- intersection with the node.
         --
@@ -385,12 +384,12 @@ data ChainFollower m point tip block tr = ChainFollower
         -- served from genesis.
         --
         -- TODO: Could be named readCheckpoints?
-    , rollForward :: tr -> tip -> [block] -> m ()
+    , rollForward :: tip -> [block] -> m ()
         -- ^ Callback for rolling forward.
         --
         -- Implementors _may_ delete old checkpoints while rolling forward.
 
-    , rollBackward :: tr -> SlotNo -> m SlotNo
+    , rollBackward :: SlotNo -> m SlotNo
         -- ^ Roll back to the requested slot, or further, and return the point
         -- actually rolled back to.
         --
@@ -434,12 +433,12 @@ mapChainFollower
     => (point1 -> point2) -- ^ Covariant
     -> (tip2 -> tip1) -- ^ Contravariant
     -> (block2 -> block1) -- ^ Contravariant
-    -> ChainFollower m point1 tip1 block1 tr
-    -> ChainFollower m point2 tip2 block2 tr
+    -> ChainFollower m point1 tip1 block1
+    -> ChainFollower m point2 tip2 block2
 mapChainFollower fpoint ftip fblock cf =
     ChainFollower
-        { readLocalTip = fmap (map fpoint) . readLocalTip cf
-        , rollForward = \tr t bs -> rollForward cf tr (ftip t) (map fblock bs)
+        { readLocalTip = map fpoint <$> readLocalTip cf
+        , rollForward = \t bs -> rollForward cf (ftip t) (map fblock bs)
         , rollBackward = rollBackward cf
         }
 
@@ -715,17 +714,18 @@ instance HasSeverityAnnotation (FollowStats LogState) where
 
 addFollowerLogging
     :: Monad m
-    => ChainFollower m point BlockHeader block (Tracer m (FollowLog msg))
-    -> ChainFollower m point BlockHeader block (Tracer m (FollowLog msg))
-addFollowerLogging cf = ChainFollower
-    { readLocalTip = \tr -> do
-        readLocalTip cf tr
-    , rollForward = \tr tip blocks -> do
+    => Tracer m (FollowLog msg)
+    -> ChainFollower m point BlockHeader block
+    -> ChainFollower m point BlockHeader block
+addFollowerLogging tr cf = ChainFollower
+    { readLocalTip = do
+        readLocalTip cf
+    , rollForward = \tip blocks -> do
         -- traceWith tr $ MsgApplyBlocks tip (NE.fromList $ map undefined blocks) -- FIXME NE
         traceWith tr $ MsgFollowerTip (Just tip)
-        rollForward cf tr tip blocks
-    , rollBackward = \tr slot -> do
-        slot' <- rollBackward cf tr slot
+        rollForward cf tip blocks
+    , rollBackward = \slot -> do
+        slot' <- rollBackward cf slot
         traceWith tr $ MsgDidRollback slot slot'
         return slot'
     }
