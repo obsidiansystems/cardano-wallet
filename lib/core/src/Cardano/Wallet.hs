@@ -874,9 +874,8 @@ restoreWallet ctx wid = db & \DBLayer{..} -> do
         { readLocalTip =
             liftIO $ atomically $ listCheckpoints wid
         , rollForward = \tip blocks -> throwInIO $
-            -- FIXME: NE.fromList
             restoreBlocks @ctx @s @k
-                ctx (contramap MsgFollowLog tr') wid (NE.fromList blocks) tip
+                ctx (contramap MsgFollowLog tr') wid blocks tip
         , rollBackward =
             throwInIO . rollbackBlocks @ctx @s @k ctx wid
         }

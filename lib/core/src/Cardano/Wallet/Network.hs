@@ -384,7 +384,7 @@ data ChainFollower m point tip block = ChainFollower
         -- served from genesis.
         --
         -- TODO: Could be named readCheckpoints?
-    , rollForward :: tip -> [block] -> m ()
+    , rollForward :: tip -> NonEmpty block -> m ()
         -- ^ Callback for rolling forward.
         --
         -- Implementors _may_ delete old checkpoints while rolling forward.
@@ -438,7 +438,7 @@ mapChainFollower
 mapChainFollower fpoint ftip fblock cf =
     ChainFollower
         { readLocalTip = map fpoint <$> readLocalTip cf
-        , rollForward = \t bs -> rollForward cf (ftip t) (map fblock bs)
+        , rollForward = \t bs -> rollForward cf (ftip t) (fmap fblock bs)
         , rollBackward = rollBackward cf
         }
 
@@ -721,7 +721,7 @@ addFollowerLogging tr cf = ChainFollower
     { readLocalTip = do
         readLocalTip cf
     , rollForward = \tip blocks -> do
-        -- traceWith tr $ MsgApplyBlocks tip (NE.fromList $ map undefined blocks) -- FIXME NE
+        traceWith tr $ MsgApplyBlocks tip (fmap (error "FIXME: todo") blocks)
         traceWith tr $ MsgFollowerTip (Just tip)
         rollForward cf tip blocks
     , rollBackward = \slot -> do

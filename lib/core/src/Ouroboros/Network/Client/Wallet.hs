@@ -68,6 +68,8 @@ import Data.Functor
     ( (<&>) )
 import Data.Kind
     ( Type )
+import Data.List.NonEmpty
+    ( NonEmpty (..) )
 import Data.Void
     ( Void )
 import Network.TypedProtocol.Pipelined
@@ -105,6 +107,7 @@ import Ouroboros.Network.Protocol.LocalTxSubmission.Type
     ( SubmitResult (..) )
 
 import qualified Cardano.Wallet.Primitive.Types as W
+import qualified Data.List.NonEmpty as NE
 import qualified Ouroboros.Network.Protocol.ChainSync.ClientPipelined as P
 import qualified Ouroboros.Network.Protocol.LocalStateQuery.Client as LSQ
 
@@ -214,7 +217,7 @@ chainSyncFollowTip toCardanoEra onTipUpdate =
 
 -- | A little type-alias to ease signatures in 'chainSyncWithBlocks'
 type RequestNextStrategy m n block
-    =  ((Tip block) -> [block] -> m ())
+    =  ((Tip block) -> NonEmpty block -> m ())
     -> P.ClientPipelinedStIdle n block (Point block) (Tip block) m Void
 
 
@@ -346,14 +349,14 @@ chainSyncWithBlocks tr cf =
         P.SendMsgRequestNextPipelined $ pipeline goal (Succ n) respond
 
     collectResponses
-        :: ((Tip block) -> [block] -> m ())
+        :: ((Tip block) -> NonEmpty block -> m ())
         -> [block]
         -> Nat n
         -> P.ClientStNext n block (Point block) (Tip block) m Void
     collectResponses respond blocks Zero = P.ClientStNext
         { P.recvMsgRollForward = \block tip -> do
             traceWith tr $ MsgChainRollForward block (getTipPoint tip)
-            let blocks' = reverse (block:blocks)
+            let blocks' = NE.reverse (block :| blocks)
             respond tip blocks'
             let distance = tipDistance (blockNo block) tip
             traceWith tr $ MsgTipDistance distance
@@ -367,8 +370,9 @@ chainSyncWithBlocks tr cf =
             case r of
                 Buffer xs -> do
                     traceWith tr $ MsgChainRollBackward point (length xs)
-                    let blocks' = reverse xs
-                    rollForward cf tip blocks'
+                    case reverse xs of
+                        []     -> pure ()
+                        (b:blocks') -> rollForward cf tip (b :| blocks') -- FIXME: respond ?
                     clientStIdle oneByOne
                 FollowerExact -> do
                     clientStIdle oneByOne
