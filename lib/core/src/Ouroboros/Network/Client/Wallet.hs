@@ -400,9 +400,8 @@ chainSyncWithBlocks tr cf =
             case rollbackBuffer point buffer of
                 [] -> do -- b)
                     traceWith tr $ MsgChainRollBackward point 0
-                    let slot = pseudoPointSlot point
-                    actual <- rollBackward cf slot
-                    if actual == slot
+                    actual <- rollBackward cf point
+                    if actual == point
                     then pure FollowerExact
                     else do
                         pure FollowerNeedToReNegotiate
@@ -433,28 +432,6 @@ chainSyncWithBlocks tr cf =
             , P.recvMsgRollBackward = \_point _tip ->
                 cont
             }
-
-    -- Historical hack. Our DB layers can't represent `Origin` when rolling
-    -- back, so we map `Origin` to `SlotNo 0`, which is wrong.
-    --
-    -- Rolling back to SlotNo 0 instead of Origin is fine for followers starting
-    -- from genesis (which should be the majority of cases). Other, non-trivial
-    -- rollbacks to genesis cannot occur on mainnet (genesis is years within
-    -- stable part, and there were no rollbacks in byron).
-    --
-    -- Could possibly be problematic in the beginning of a testnet without a
-    -- byron era. /Perhaps/ this is what is happening in the
-    -- >>> [cardano-wallet.pools-engine:Error:1293] [2020-11-24 10:02:04.00 UTC]
-    -- >>> Couldn't store production for given block before it conflicts with
-    -- >>> another block. Conflicting block header is:
-    -- >>> 5bde7e7b<-[f1b35b98-4290#2008]
-    -- errors observed in the integration tests.
-    --
-    -- FIXME: Fix should be relatively straight-forward, so we should probably
-    -- do it.
-    pseudoPointSlot p = case pointSlot p of
-        Origin -> W.SlotNo 0
-        At slot -> slot
 
 --------------------------------------------------------------------------------
 --

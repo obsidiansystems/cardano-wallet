@@ -89,6 +89,7 @@ import Cardano.Wallet.Shelley.Compatibility
     , fromCardanoHash
     , fromLedgerPParams
     , fromNonMyopicMemberRewards
+    , fromPoint
     , fromPoolDistr
     , fromShelleyCoin
     , fromShelleyPParams
@@ -348,7 +349,7 @@ withNetworkLayerBase tr net np conn versionData tol action = do
                 client <- mkWalletClient
                     followTr
                     (mapChainFollower
-                        (toPoint getGenesisBlockHash)
+                        toPoint fromPoint
                         (fromTip' gp)
                         id
                         (addFollowerLogging followTr follower))
