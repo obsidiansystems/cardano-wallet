@@ -111,7 +111,7 @@ data NetworkLayer m block = NetworkLayer
             BlockHeader
             BlockHeader
             block
-        -> IO ()
+        -> m ()
 
     , currentNodeTip
         :: m BlockHeader
