@@ -106,7 +106,6 @@ import Ouroboros.Network.Protocol.LocalTxSubmission.Client
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type
     ( SubmitResult (..) )
 
-import qualified Cardano.Wallet.Primitive.Types as W
 import qualified Data.List.NonEmpty as NE
 import qualified Ouroboros.Network.Protocol.ChainSync.ClientPipelined as P
 import qualified Ouroboros.Network.Protocol.LocalStateQuery.Client as LSQ

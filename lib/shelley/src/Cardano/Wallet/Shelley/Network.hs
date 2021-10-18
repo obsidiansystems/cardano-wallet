@@ -10,7 +10,6 @@
 {-# LANGUAGE NoMonoLocalBinds #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE NumericUnderscores #-}
-{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
@@ -349,7 +348,8 @@ withNetworkLayerBase tr net np conn versionData tol action = do
                 client <- mkWalletClient
                     followTr
                     (mapChainFollower
-                        toPoint fromPoint
+                        toPoint
+                        fromPoint
                         (fromTip' gp)
                         id
                         (addFollowerLogging followTr follower))
