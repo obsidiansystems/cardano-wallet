@@ -867,6 +867,7 @@ restoreWallet
     :: forall ctx s k.
         ( HasNetworkLayer IO ctx
         , HasDBLayer IO s k ctx
+        , HasGenesisData ctx
         , HasLogger WalletWorkerLog ctx
         , IsOurs s Address
         , IsOurs s RewardAccount
@@ -876,8 +877,8 @@ restoreWallet
     -> ExceptT ErrNoSuchWallet IO ()
 restoreWallet ctx wid = db & \DBLayer{..} -> do
     liftIO $ chainSync nw (contramap MsgChainFollow tr) $ ChainFollower
-        { readLocalTip =
-            liftIO $ atomically $ map toChainPoint <$> listCheckpoints wid
+        { readLocalTip = liftIO $ atomically $
+            map (toChainPoint block0) <$> listCheckpoints wid
         , rollForward = \blocks tip -> throwInIO $
             restoreBlocks @ctx @s @k
                 ctx (contramap MsgWalletFollow tr) wid blocks tip
@@ -888,6 +889,7 @@ restoreWallet ctx wid = db & \DBLayer{..} -> do
     db = ctx ^. dbLayer @IO @s @k
     nw = ctx ^. networkLayer @IO
     tr = ctx ^. logger @WalletWorkerLog
+    (block0, _, _) = ctx ^. genesisData
 
     throwInIO :: ExceptT ErrNoSuchWallet IO a -> IO a
     throwInIO x = runExceptT x >>= \case
@@ -897,23 +899,32 @@ restoreWallet ctx wid = db & \DBLayer{..} -> do
 -- | Rewind the UTxO snapshots, transaction history and other information to a
 -- the earliest point in the past that is before or is the point of rollback.
 rollbackBlocks
-    :: forall ctx s k. (HasDBLayer IO s k ctx)
+    :: forall ctx s k.
+        ( HasDBLayer IO s k ctx
+        , HasGenesisData ctx
+        )
     => ctx
     -> WalletId
     -> ChainPoint
     -> ExceptT ErrNoSuchWallet IO ChainPoint
 rollbackBlocks ctx wid point = db & \DBLayer{..} -> do
-    mapExceptT atomically $ toChainPoint <$> rollbackTo wid (pseudoPointSlot point)
+    mapExceptT atomically $ (toChainPoint block0)
+        <$> rollbackTo wid (pseudoPointSlot point)
   where
     db = ctx ^. dbLayer @IO @s @k
+    (block0, _, _) = ctx ^. genesisData
 
--- See NOTE [PointSlotNo]
-pseudoPointSlot :: ChainPoint -> SlotNo
-pseudoPointSlot ChainPointAtGenesis = W.SlotNo 0
-pseudoPointSlot (ChainPoint slot _) = slot
+    -- See NOTE [PointSlotNo]
+    pseudoPointSlot :: ChainPoint -> SlotNo
+    pseudoPointSlot ChainPointAtGenesis = W.SlotNo 0
+    pseudoPointSlot (ChainPoint slot _) = slot
 
-toChainPoint :: W.BlockHeader -> ChainPoint
-toChainPoint (BlockHeader slot _ h _) = ChainPoint slot h
+toChainPoint :: W.Block -> W.BlockHeader -> ChainPoint
+toChainPoint genesisBlock (BlockHeader slot _ h _)
+    | slot == 0 && h == genesisHash = ChainPointAtGenesis
+    | otherwise                     = ChainPoint slot h
+  where
+    genesisHash = genesisBlock ^. (#header . #headerHash)
 
 {- NOTE [PointSlotNo] 
 
