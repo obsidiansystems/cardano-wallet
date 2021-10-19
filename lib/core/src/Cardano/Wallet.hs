@@ -2601,10 +2601,8 @@ data ErrSignPayment
     deriving (Show, Eq)
 
 -- | Errors that can occur when balancing transaction.
-data ErrBalanceTx
-    = ErrBalanceTxTxAlreadyBalanced
-    | ErrBalanceTxUpdateError ErrUpdateSealedTx
-    | ErrBalanceTxNotImplemented
+newtype ErrBalanceTx
+    = ErrBalanceTxUpdateError ErrUpdateSealedTx
     deriving (Show, Eq)
 
 -- | Errors that can occur when constructing an unsigned transaction.
