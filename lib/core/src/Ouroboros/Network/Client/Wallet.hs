@@ -216,8 +216,7 @@ chainSyncFollowTip toCardanoEra onTipUpdate =
 
 -- | A little type-alias to ease signatures in 'chainSyncWithBlocks'
 type RequestNextStrategy m n block
-    =  ((Tip block) -> NonEmpty block -> m ())
-    -> P.ClientPipelinedStIdle n block (Point block) (Tip block) m Void
+    = P.ClientPipelinedStIdle n block (Point block) (Tip block) m Void
 
 
 -- | Helper type for the different ways we handle rollbacks.
@@ -275,7 +274,7 @@ chainSyncWithBlocks
     => Tracer m (ChainSyncLog block (Point block))
     -> ChainFollower m (Point block) (Tip block) block
     -> ChainSyncClientPipelined block (Point block) (Tip block) m Void
-chainSyncWithBlocks tr cf =
+chainSyncWithBlocks tr chainFollower =
     ChainSyncClientPipelined clientStNegotiateIntersection
   where
     -- Return the _number of slots between two tips.
@@ -293,7 +292,7 @@ chainSyncWithBlocks tr cf =
     clientStNegotiateIntersection
         :: m (P.ClientPipelinedStIdle 'Z block (Point block) (Tip block) m Void)
     clientStNegotiateIntersection = do
-        points <- readLocalTip cf
+        points <- readLocalTip chainFollower
         if null points
         then clientStIdle oneByOne
         else pure $ P.SendMsgFindIntersect
@@ -303,33 +302,37 @@ chainSyncWithBlocks tr cf =
         clientStIntersect
             :: P.ClientPipelinedStIntersect block (Point block) (Tip block) m Void
         clientStIntersect = P.ClientPipelinedStIntersect
-            { recvMsgIntersectFound = \_intersection _tip -> do
-                -- The node will reply with a RollBackward to the intersection if
-                -- required, so we don't have to manually rollback here.
+            { recvMsgIntersectFound = \_point _tip -> do
+                -- Here, the node tells us which  point  from the possible
+                -- intersections is the latest point on the chain.
+                -- However, we do not have to roll back to this point here;
+                -- when we send a MsgRequestNext message, the node will reply
+                -- with a MsgRollBackward message to this point first.
                 --
+                -- This behavior is not in the network specification yet, but see
                 -- https://input-output-rnd.slack.com/archives/CDA6LUXAQ/p1623322238039900
                 clientStIdle oneByOne
 
             , recvMsgIntersectNotFound = \_tip -> do
-                error "todo"
-                --respond Nothing
-                --flush responseBuffer
-                --clientStIdle oneByOne
+                -- Same as above, the node will (usually) reply to us with a
+                -- MsgRollBackward message later (here to the genesis point)
+                --
+                -- There is a weird corner case when the original MsgFindIntersect
+                -- message contains an empty list. See
+                -- https://input-output-rnd.slack.com/archives/CDA6LUXAQ/p1634644689103100
+                clientStIdle oneByOne
             }
 
     clientStIdle
         :: RequestNextStrategy m 'Z block
         -> m (P.ClientPipelinedStIdle 'Z block (Point block) (Tip block) m Void)
-    clientStIdle strategy =
-        pure $ strategy (rollForward cf)
-
+    clientStIdle strategy = pure strategy
 
     -- Simple strategy that sends a request and waits for an answer.
-    oneByOne
-        :: RequestNextStrategy m 'Z block
-    oneByOne respond = P.SendMsgRequestNext
-        (collectResponses respond [] Zero)
-        (pure $ collectResponses respond [] Zero)
+    oneByOne :: RequestNextStrategy m 'Z block
+    oneByOne = P.SendMsgRequestNext
+        (collectResponses [] Zero)
+        (pure $ collectResponses [] Zero)
 
     -- We only pipeline requests when we are far from the tip. As soon as we
     -- reach the tip however, there's no point pipelining anymore, so we start
@@ -342,21 +345,20 @@ chainSyncWithBlocks tr cf =
         :: Int
         -> Nat n
         -> RequestNextStrategy m n block
-    pipeline goal (Succ n) respond | natToInt (Succ n) == goal =
-        P.CollectResponse Nothing $ collectResponses respond [] n
-    pipeline goal n respond =
-        P.SendMsgRequestNextPipelined $ pipeline goal (Succ n) respond
+    pipeline goal (Succ n) | natToInt (Succ n) == goal =
+        P.CollectResponse Nothing $ collectResponses [] n
+    pipeline goal n =
+        P.SendMsgRequestNextPipelined $ pipeline goal (Succ n)
 
     collectResponses
-        :: ((Tip block) -> NonEmpty block -> m ())
-        -> [block]
+        :: [block]
         -> Nat n
         -> P.ClientStNext n block (Point block) (Tip block) m Void
-    collectResponses respond blocks Zero = P.ClientStNext
+    collectResponses blocks Zero = P.ClientStNext
         { P.recvMsgRollForward = \block tip -> do
             traceWith tr $ MsgChainRollForward block (getTipPoint tip)
             let blocks' = NE.reverse (block :| blocks)
-            respond tip blocks'
+            rollForward chainFollower tip blocks'
             let distance = tipDistance (blockNo block) tip
             traceWith tr $ MsgTipDistance distance
             let strategy = if distance <= 1
@@ -370,23 +372,23 @@ chainSyncWithBlocks tr cf =
                 Buffer xs -> do
                     traceWith tr $ MsgChainRollBackward point (length xs)
                     case reverse xs of
-                        []     -> pure ()
-                        (b:blocks') -> rollForward cf tip (b :| blocks') -- FIXME: respond ?
+                        []          -> pure ()
+                        (b:blocks') -> rollForward chainFollower tip (b :| blocks')
                     clientStIdle oneByOne
                 FollowerExact -> do
                     clientStIdle oneByOne
                 FollowerNeedToReNegotiate -> clientStNegotiateIntersection
         }
 
-    collectResponses respond blocks (Succ n) = P.ClientStNext
+    collectResponses blocks (Succ n) = P.ClientStNext
         { P.recvMsgRollForward = \block _tip ->
-            pure $ P.CollectResponse Nothing $ collectResponses respond (block:blocks) n
+            pure $ P.CollectResponse Nothing $ collectResponses (block:blocks) n
 
         , P.recvMsgRollBackward = \point tip -> do
             r <- handleRollback blocks point tip
             pure $ P.CollectResponse Nothing $ case r of
-                Buffer xs -> collectResponses respond xs n
-                FollowerExact -> collectResponses respond [] n
+                Buffer xs -> collectResponses xs n
+                FollowerExact -> collectResponses [] n
                 FollowerNeedToReNegotiate -> dropResponsesAndRenegotiate n
         }
 
@@ -399,7 +401,7 @@ chainSyncWithBlocks tr cf =
             case rollbackBuffer point buffer of
                 [] -> do -- b)
                     traceWith tr $ MsgChainRollBackward point 0
-                    actual <- rollBackward cf point
+                    actual <- rollBackward chainFollower point
                     if actual == point
                     then pure FollowerExact
                     else do
@@ -409,8 +411,8 @@ chainSyncWithBlocks tr cf =
     -- | Discards the in-flight requests, and re-negotiates the intersection
     -- afterwards.
     dropResponsesAndRenegotiate
-            :: Nat n
-            -> P.ClientStNext n block (Point block) (Tip block) m Void
+        :: Nat n
+        -> P.ClientStNext n block (Point block) (Tip block) m Void
     dropResponsesAndRenegotiate = flip dropResponses clientStNegotiateIntersection
       where
         dropResponses
@@ -423,7 +425,6 @@ chainSyncWithBlocks tr cf =
                     pure $ P.CollectResponse Nothing $ dropResponses n cont
                 , P.recvMsgRollBackward = \_point _tip ->
                     pure $ P.CollectResponse Nothing $ dropResponses n cont
-
                 }
         dropResponses Zero cont = P.ClientStNext
             { P.recvMsgRollForward = \_block _tip ->
