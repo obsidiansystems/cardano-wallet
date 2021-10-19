@@ -61,7 +61,7 @@ import Control.Monad.Class.MonadSTM
     , writeTQueue
     )
 import Control.Monad.Class.MonadThrow
-    ( MonadThrow )
+    ( Exception, MonadThrow, throwIO )
 import Control.Monad.IO.Class
     ( MonadIO )
 import Data.Functor
@@ -218,7 +218,6 @@ chainSyncFollowTip toCardanoEra onTipUpdate =
 type RequestNextStrategy m n block
     = P.ClientPipelinedStIdle n block (Point block) (Tip block) m Void
 
-
 -- | Helper type for the different ways we handle rollbacks.
 --
 -- Helps remove some boilerplate.
@@ -270,7 +269,7 @@ data LocalRollbackResult block
 --      *------*
 --
 chainSyncWithBlocks
-    :: forall m block. (Monad m, MonadSTM m, HasHeader block)
+    :: forall m block. (Monad m, MonadSTM m, MonadThrow m, HasHeader block)
     => Tracer m (ChainSyncLog block (Point block))
     -> ChainFollower m (Point block) (Tip block) block
     -> ChainSyncClientPipelined block (Point block) (Tip block) m Void
@@ -302,7 +301,7 @@ chainSyncWithBlocks tr chainFollower =
         clientStIntersect
             :: P.ClientPipelinedStIntersect block (Point block) (Tip block) m Void
         clientStIntersect = P.ClientPipelinedStIntersect
-            { recvMsgIntersectFound = \_point _tip -> do
+            { P.recvMsgIntersectFound = \_point _tip ->
                 -- Here, the node tells us which  point  from the possible
                 -- intersections is the latest point on the chain.
                 -- However, we do not have to roll back to this point here;
@@ -313,14 +312,21 @@ chainSyncWithBlocks tr chainFollower =
                 -- https://input-output-rnd.slack.com/archives/CDA6LUXAQ/p1623322238039900
                 clientStIdle oneByOne
 
-            , recvMsgIntersectNotFound = \_tip -> do
+            , P.recvMsgIntersectNotFound = \_tip ->
                 -- Same as above, the node will (usually) reply to us with a
                 -- MsgRollBackward message later (here to the genesis point)
                 --
-                -- There is a weird corner case when the original MsgFindIntersect
+                -- But there is a weird corner case when the original MsgFindIntersect
                 -- message contains an empty list. See
                 -- https://input-output-rnd.slack.com/archives/CDA6LUXAQ/p1634644689103100
-                clientStIdle oneByOne
+                --
+                -- To get rid of this case, we now explicitly request genesis.
+                -- If we fail again, we throw an exception.
+                pure $ P.SendMsgFindIntersect [Point Origin] $
+                    clientStIntersect
+                        { P.recvMsgIntersectNotFound = \_tip ->
+                            throwIO ErrChainSyncNoIntersectGenesis
+                        }
             }
 
     clientStIdle
@@ -629,3 +635,15 @@ send queue cmd = do
     tvar <- newEmptyTMVarIO
     atomically $ writeTQueue queue (cmd (atomically . putTMVar tvar))
     atomically $ takeTMVar tvar
+
+{-------------------------------------------------------------------------------
+    Errors
+-------------------------------------------------------------------------------}
+data ErrChainSync
+    = ErrChainSyncNoIntersectGenesis
+    -- ^ The node does not give us genesis when we request it with a
+    -- 'MsgFindIntersect' message in the ChainSync protocol.
+    -- This should not happen.
+    deriving (Eq, Show)
+
+instance Exception ErrChainSync
