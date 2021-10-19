@@ -715,13 +715,15 @@ instance HasSeverityAnnotation (FollowStats LogState) where
 addFollowerLogging
     :: Monad m
     => Tracer m (FollowLog msg)
+    -> (block -> BlockHeader)
+    -- ^ Extract a 'BlockHeader' for pretty printing.
     -> ChainFollower m ChainPoint BlockHeader block
     -> ChainFollower m ChainPoint BlockHeader block
-addFollowerLogging tr cf = ChainFollower
+addFollowerLogging tr fromBlock cf = ChainFollower
     { readLocalTip = do
         readLocalTip cf
     , rollForward = \tip blocks -> do
-        traceWith tr $ MsgApplyBlocks tip (fmap (error "FIXME: todo") blocks)
+        traceWith tr $ MsgApplyBlocks tip (fromBlock <$> blocks)
         traceWith tr $ MsgFollowerTip (Just tip)
         rollForward cf tip blocks
     , rollBackward = \point -> do

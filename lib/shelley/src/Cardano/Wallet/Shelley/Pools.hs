@@ -544,7 +544,7 @@ monitorStakePools followTr (NetworkParameters gp sp _pp) nl DBLayer{..} =
                     liftIO . atomically $ rollbackTo $ pseudoPointSlot point
                     -- The DB will always rollback to the requested slot, so we
                     -- return it.
-                    return $ Right point
+                    return point
 
                 -- See NOTE [PointSlotNo]
                 pseudoPointSlot :: ChainPoint -> SlotNo
@@ -556,8 +556,8 @@ monitorStakePools followTr (NetworkParameters gp sp _pp) nl DBLayer{..} =
 
             chainSync nl followTr $ ChainFollower
                 { readLocalTip = map toChainPoint <$> initCursor
-                , rollForward = \tip blocks -> rollForward blocks tip innerTr
-                , rollBackward = fmap (either (error "todo") id) . rollback
+                , rollForward  = \tip blocks -> rollForward blocks tip innerTr
+                , rollBackward = rollback
                 }
 
     GenesisParameters  { getGenesisBlockHash  } = gp

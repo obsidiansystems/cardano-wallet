@@ -100,6 +100,7 @@ import Cardano.Wallet.Shelley.Compatibility
     , nodeToClientVersions
     , optimumNumberOfPools
     , slottingParametersFromGenesis
+    , toCardanoBlockHeader
     , toCardanoEra
     , toPoint
     , toShelleyCoin
@@ -350,6 +351,8 @@ withNetworkLayerBase tr net np conn versionData tol action = do
                     followTr'
                     (_syncProgress interpreterVar)
             withStats $ \followTr -> do
+                let addLogging =
+                        addFollowerLogging followTr (toCardanoBlockHeader gp)
                 client <- mkWalletClient
                     followTr
                     (mapChainFollower
@@ -357,7 +360,7 @@ withNetworkLayerBase tr net np conn versionData tol action = do
                         fromPoint
                         (fromTip' gp)
                         id
-                        (addFollowerLogging followTr follower))
+                        (addLogging follower))
                     cfg
                 connectClient tr handlers client versionData conn
 
