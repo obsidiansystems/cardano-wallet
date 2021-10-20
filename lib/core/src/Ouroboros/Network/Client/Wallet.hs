@@ -292,41 +292,41 @@ chainSyncWithBlocks tr chainFollower =
         :: m (P.ClientPipelinedStIdle 'Z block (Point block) (Tip block) m Void)
     clientStNegotiateIntersection = do
         points <- readLocalTip chainFollower
-        if null points
-        then clientStIdle oneByOne
-        else pure $ P.SendMsgFindIntersect
-            points
-            clientStIntersect
-      where
-        clientStIntersect
-            :: P.ClientPipelinedStIntersect block (Point block) (Tip block) m Void
-        clientStIntersect = P.ClientPipelinedStIntersect
-            { P.recvMsgIntersectFound = \_point _tip ->
-                -- Here, the node tells us which  point  from the possible
-                -- intersections is the latest point on the chain.
-                -- However, we do not have to roll back to this point here;
-                -- when we send a MsgRequestNext message, the node will reply
-                -- with a MsgRollBackward message to this point first.
-                --
-                -- This behavior is not in the network specification yet, but see
-                -- https://input-output-rnd.slack.com/archives/CDA6LUXAQ/p1623322238039900
-                clientStIdle oneByOne
+        pure $ if null points
+            then clientStNegotiateGenesis -- see documentation for readLocalTip
+            else P.SendMsgFindIntersect points clientStIntersect
 
-            , P.recvMsgIntersectNotFound = \_tip ->
-                -- Same as above, the node will (usually) reply to us with a
-                -- MsgRollBackward message later (here to the genesis point)
-                --
-                -- But there is a weird corner case when the original MsgFindIntersect
-                -- message contains an empty list. See
-                -- https://input-output-rnd.slack.com/archives/CDA6LUXAQ/p1634644689103100
-                --
-                -- To get rid of this case, we now explicitly request genesis.
-                -- If we fail again, we throw an exception.
-                pure $ P.SendMsgFindIntersect [Point Origin] $
-                    clientStIntersect
-                        { P.recvMsgIntersectNotFound = \_tip ->
-                            throwIO ErrChainSyncNoIntersectGenesis
-                        }
+    -- Receive the result of the MsgFindIntersection request
+    clientStIntersect
+        :: P.ClientPipelinedStIntersect block (Point block) (Tip block) m Void
+    clientStIntersect = P.ClientPipelinedStIntersect
+        { P.recvMsgIntersectFound = \_point _tip ->
+            -- Here, the node tells us which  point  from the possible
+            -- intersections is the latest point on the chain.
+            -- However, we do not have to roll back to this point here;
+            -- when we send a MsgRequestNext message, the node will reply
+            -- with a MsgRollBackward message to this point first.
+            --
+            -- This behavior is not in the network specification yet, but see
+            -- https://input-output-rnd.slack.com/archives/CDA6LUXAQ/p1623322238039900
+            clientStIdle oneByOne
+        , P.recvMsgIntersectNotFound = \_tip ->
+            -- No intersection was found.
+            -- As the read-pointer on the node could be unknown to us,
+            -- we now explicitly request the genesis point.
+            --
+            -- See also
+            -- https://input-output-rnd.slack.com/archives/CDA6LUXAQ/p1634644689103100
+            pure $ clientStNegotiateGenesis
+            }
+
+    -- Explictly negotiate the genesis point
+    clientStNegotiateGenesis
+        :: P.ClientPipelinedStIdle 'Z block (Point block) (Tip block) m Void
+    clientStNegotiateGenesis = P.SendMsgFindIntersect [Point Origin] $
+        clientStIntersect
+            { P.recvMsgIntersectNotFound = \_tip ->
+                throwIO ErrChainSyncNoIntersectGenesis
             }
 
     clientStIdle
