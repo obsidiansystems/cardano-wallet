@@ -381,9 +381,10 @@ chainSyncWithBlocks tr chainFollower =
                         []          -> pure ()
                         (b:blocks') -> rollForward chainFollower tip (b :| blocks')
                     clientStIdle oneByOne
-                FollowerExact -> do
+                FollowerExact ->
                     clientStIdle oneByOne
-                FollowerNeedToReNegotiate -> clientStNegotiateIntersection
+                FollowerNeedToReNegotiate ->
+                    clientStNegotiateIntersection
         }
 
     collectResponses blocks (Succ n) = P.ClientStNext
@@ -403,40 +404,35 @@ chainSyncWithBlocks tr chainFollower =
         -> Point block
         -> Tip block
         -> m (LocalRollbackResult block)
-    handleRollback buffer point _tip = do
-            case rollbackBuffer point buffer of
-                [] -> do -- b)
-                    traceWith tr $ MsgChainRollBackward point 0
-                    actual <- rollBackward chainFollower point
-                    if actual == point
-                    then pure FollowerExact
-                    else do
-                        pure FollowerNeedToReNegotiate
-                xs -> pure $ Buffer xs
+    handleRollback buffer point _tip =
+        case rollbackBuffer point buffer of
+            [] -> do
+                traceWith tr $ MsgChainRollBackward point 0
+                actual <- rollBackward chainFollower point
+                if actual == point
+                then pure FollowerExact
+                else do
+                    pure FollowerNeedToReNegotiate
+            xs -> pure $ Buffer xs
 
     -- | Discards the in-flight requests, and re-negotiates the intersection
     -- afterwards.
     dropResponsesAndRenegotiate
         :: Nat n
         -> P.ClientStNext n block (Point block) (Tip block) m Void
-    dropResponsesAndRenegotiate = flip dropResponses clientStNegotiateIntersection
-      where
-        dropResponses
-            :: Nat n
-            -> m (P.ClientPipelinedStIdle 'Z block (Point block) (Tip block) m Void)
-            -> P.ClientStNext n block (Point block) (Tip block) m Void
-        dropResponses (Succ n) cont =
-            P.ClientStNext
-                { P.recvMsgRollForward = \_block _tip ->
-                    pure $ P.CollectResponse Nothing $ dropResponses n cont
-                , P.recvMsgRollBackward = \_point _tip ->
-                    pure $ P.CollectResponse Nothing $ dropResponses n cont
-                }
-        dropResponses Zero cont = P.ClientStNext
+    dropResponsesAndRenegotiate (Succ n) =
+        P.ClientStNext
             { P.recvMsgRollForward = \_block _tip ->
-                cont
+                pure $ P.CollectResponse Nothing $ dropResponsesAndRenegotiate n
             , P.recvMsgRollBackward = \_point _tip ->
-                cont
+                pure $ P.CollectResponse Nothing $ dropResponsesAndRenegotiate n
+            }
+    dropResponsesAndRenegotiate Zero =
+        P.ClientStNext
+            { P.recvMsgRollForward = \_block _tip ->
+                clientStNegotiateIntersection
+            , P.recvMsgRollBackward = \_point _tip ->
+                clientStNegotiateIntersection
             }
 
 --------------------------------------------------------------------------------
