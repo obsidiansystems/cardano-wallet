@@ -317,7 +317,7 @@ chainSyncWithBlocks tr chainFollower =
             --
             -- See also
             -- https://input-output-rnd.slack.com/archives/CDA6LUXAQ/p1634644689103100
-            pure $ clientStNegotiateGenesis
+            pure clientStNegotiateGenesis
             }
 
     -- Explictly negotiate the genesis point
