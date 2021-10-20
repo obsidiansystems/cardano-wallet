@@ -531,6 +531,8 @@ import qualified Cardano.Wallet.Primitive.Types.TokenMap as TokenMap
 import qualified Cardano.Wallet.Primitive.Types.UTxO as UTxO
 import qualified Cardano.Wallet.Primitive.Types.UTxOIndex as UTxOIndex
 import qualified Cardano.Wallet.Primitive.Types.UTxOSelection as UTxOSelection
+import Control.Monad.Random
+    ( MonadRandom )
 import qualified Data.ByteArray as BA
 import qualified Data.Foldable as F
 import qualified Data.List as L
@@ -624,7 +626,7 @@ type HasDBLayer m s k = HasType (DBLayer m s k)
 
 type HasGenesisData = HasType (Block, NetworkParameters, SyncTolerance)
 
-type HasLogger msg = HasType (Tracer IO msg)
+type HasLogger m msg = HasType (Tracer m msg)
 
 -- | This module is only interested in one block-, and tx-type. This constraint
 -- hides that choice, for some ease of use.
@@ -645,10 +647,10 @@ genesisData =
     typed @(Block, NetworkParameters, SyncTolerance)
 
 logger
-    :: forall msg ctx. HasLogger msg ctx
-    => Lens' ctx (Tracer IO msg)
+    :: forall m msg ctx. HasLogger m msg ctx
+    => Lens' ctx (Tracer m msg)
 logger =
-    typed @(Tracer IO msg)
+    typed @(Tracer m msg)
 
 networkLayer
     :: forall m ctx. (HasNetworkLayer m ctx)
@@ -868,7 +870,7 @@ restoreWallet
     :: forall ctx s k.
         ( HasNetworkLayer IO ctx
         , HasDBLayer IO s k ctx
-        , HasLogger WalletWorkerLog ctx
+        , HasLogger IO WalletWorkerLog ctx
         , IsOurs s Address
         , IsOurs s RewardAccount
         )
@@ -884,7 +886,7 @@ restoreWallet ctx wid = db & \DBLayer{..} -> do
   where
     db = ctx ^. dbLayer @IO @s @k
     nw = ctx ^. networkLayer
-    tr = contramap MsgFollow (ctx ^. logger @WalletWorkerLog)
+    tr = contramap MsgFollow (ctx ^. logger @_ @WalletWorkerLog)
 
     run :: ExceptT ErrNoSuchWallet IO () -> IO (FollowAction ErrNoSuchWallet)
     run = fmap (either ExitWith (const Continue)) . runExceptT
@@ -1106,7 +1108,7 @@ queryRewardBalance ctx acct = do
 
 manageRewardBalance
     :: forall ctx s k (n :: NetworkDiscriminant).
-        ( HasLogger WalletWorkerLog ctx
+        ( HasLogger IO WalletWorkerLog ctx
         , HasNetworkLayer IO ctx
         , HasDBLayer IO s k ctx
         , Typeable s
@@ -1143,7 +1145,7 @@ manageRewardBalance _ ctx wid = db & \DBLayer{..} -> do
   where
     db = ctx ^. dbLayer @IO @s @k
     NetworkLayer{watchNodeTip} = ctx ^. networkLayer
-    tr = contramap MsgWallet $ ctx ^. logger @WalletWorkerLog
+    tr = contramap MsgWallet $ ctx ^. logger @_ @WalletWorkerLog
 
 {-------------------------------------------------------------------------------
                                     Address
@@ -1433,8 +1435,8 @@ data SelectAssetsParams s result = SelectAssetsParams
 selectAssets
     :: forall ctx s k result.
         ( HasTransactionLayer k ctx
-        , HasLogger WalletWorkerLog ctx
         , HasNetworkLayer IO ctx
+        , HasLogger IO WalletWorkerLog ctx
         )
     => ctx
     -> SelectAssetsParams s result
@@ -1491,9 +1493,9 @@ selectAssets ctx params transform = do
                 params ^. #utxoAvailableForInputs
             }
     case mSel of
-        Left e -> liftIO $
+        Left e -> lift $
             traceWith tr $ MsgSelectionError e
-        Right sel -> liftIO $ do
+        Right sel -> lift $ do
             traceWith tr $ MsgSelectionReportSummarized
                 $ makeSelectionReportSummarized sel
             traceWith tr $ MsgSelectionReportDetailed
@@ -1503,14 +1505,14 @@ selectAssets ctx params transform = do
   where
     nl = ctx ^. networkLayer
     tl = ctx ^. transactionLayer @k
-    tr = contramap MsgWallet $ ctx ^. logger
+    tr = contramap MsgWallet $ ctx ^. logger @m
 
     -- Ensure that there's no existing pending withdrawals. Indeed, a withdrawal
     -- is necessarily withdrawing rewards in their totality. So, after a first
     -- withdrawal is executed, the reward pot is empty. So, to prevent two
     -- transactions with withdrawals to go through (which will inevitably cause
     -- one of them to never be inserted), we warn users early on about it.
-    guardPendingWithdrawal :: ExceptT ErrSelectAssets IO ()
+    guardPendingWithdrawal :: ExceptT ErrSelectAssets m ()
     guardPendingWithdrawal =
         case Set.lookupMin $ Set.filter hasWithdrawal $ params ^. #pendingTxs of
             Just pendingWithdrawal
@@ -1718,7 +1720,7 @@ submitTx
     :: forall ctx s k.
         ( HasNetworkLayer IO ctx
         , HasDBLayer IO s k ctx
-        , HasLogger WalletWorkerLog ctx
+        , HasLogger IO WalletWorkerLog ctx
         )
     => ctx
     -> WalletId
@@ -1751,7 +1753,7 @@ submitExternalTx
     :: forall ctx k.
         ( HasNetworkLayer IO ctx
         , HasTransactionLayer k ctx
-        , HasLogger TxSubmitLog ctx
+        , HasLogger IO TxSubmitLog ctx
         )
     => ctx
     -> SealedTx
@@ -1824,7 +1826,7 @@ runLocalTxSubmissionPool
     :: forall ctx s k m.
         ( MonadUnliftIO m
         , MonadMonotonicTime m
-        , HasLogger WalletWorkerLog ctx
+        , HasLogger IO WalletWorkerLog ctx
         , HasNetworkLayer m ctx
         , HasDBLayer m s k ctx
         )
@@ -1857,7 +1859,7 @@ runLocalTxSubmissionPool cfg ctx wid = db & \DBLayer{..} -> do
     rateLimited = throttle (rateLimit cfg) . const
 
     tr = unliftIOTracer $ contramap (MsgWallet . MsgTxSubmit) $
-        ctx ^. logger @WalletWorkerLog
+        ctx ^. logger @_ @WalletWorkerLog
     trBracket = contramap MsgProcessPendingPool tr
     trRetry i = contramap (MsgRetryPostTx i) tr
 
@@ -2043,7 +2045,7 @@ joinStakePool
     :: forall ctx s k n.
         ( HasDBLayer IO s k ctx
         , HasNetworkLayer IO ctx
-        , HasLogger WalletWorkerLog ctx
+        , HasLogger IO WalletWorkerLog ctx
         , s ~ SeqState n k
         )
     => ctx
