@@ -393,6 +393,7 @@ import Cardano.Wallet.Primitive.Slotting
     , neverFails
     , ongoingSlotAt
     , slotToUTCTime
+    , snapshot
     , timeOfEpoch
     , toSlotId
     , unsafeExtendSafeZone
@@ -2242,6 +2243,8 @@ balanceTransaction ctx genChange (ApiT wid) body = do
     -- TODO: This throws when still in the Byron era.
     nodePParams <- fromJust <$> liftIO (NW.currentNodeProtocolParameters nl)
 
+    ti <- liftIO $ snapshot $ timeInterpreter (ctx ^. networkLayer)
+
     let (outputs, txWithdrawal, txMetadata, txAssetsToMint, txAssetsToBurn) = extractFromTx partialTx
 
     (delta, extraInputs, extraCollateral, extraOutputs) <-
@@ -2322,7 +2325,7 @@ balanceTransaction ctx genChange (ApiT wid) body = do
     -- doing such thing is considered bonkers and this is not a behavior we
     -- ought to support.
 
-    candidateTx <- assembleTransaction nodePParams $ TxUpdate
+    candidateTx <- assembleTransaction nodePParams ti $ TxUpdate
         { extraInputs
         , extraCollateral
         , extraOutputs
@@ -2332,7 +2335,7 @@ balanceTransaction ctx genChange (ApiT wid) body = do
             evaluateMinimumFee tl nodePParams candidateTx
 
     let surplus = delta `Coin.distance` candidateMinFee
-    finalTx <- assembleTransaction nodePParams $ TxUpdate
+    finalTx <- assembleTransaction nodePParams ti $ TxUpdate
         { extraInputs
         , extraCollateral
         , extraOutputs = mapFirst (txOutAddCoin surplus) extraOutputs
@@ -2345,7 +2348,6 @@ balanceTransaction ctx genChange (ApiT wid) body = do
   where
     nl = ctx ^. networkLayer
     tl = ctx ^. W.transactionLayer @k
-    ti = timeInterpreter (ctx ^. networkLayer)
 
     partialTx :: SealedTx
     partialTx = body ^. #transaction . #getApiT
@@ -2358,11 +2360,12 @@ balanceTransaction ctx genChange (ApiT wid) body = do
 
     assembleTransaction
         :: Cardano.ProtocolParameters
+        -> TimeInterpreter (Either PastHorizonException)
         -> TxUpdate
         -> Handler SealedTx
-    assembleTransaction nodePParams update = do
+    assembleTransaction nodePParams ti update = do
         tx' <- asHandler $ updateTx tl partialTx update
-        liftHandler $ ExceptT $ assignScriptRedeemers
+        liftHandler $ ExceptT $ pure $ assignScriptRedeemers
             tl nodePParams ti resolveInput redeemers tx'
       where
         resolveInput :: TxIn -> Maybe (TxOut, Maybe (Hash "Datum"))
