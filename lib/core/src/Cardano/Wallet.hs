@@ -1433,19 +1433,20 @@ data SelectAssetsParams s result = SelectAssetsParams
 -- and its associated cost. That is, the cost is equal to the difference between
 -- inputs and outputs.
 selectAssets
-    :: forall ctx s k result.
+    :: forall ctx m s k result.
         ( HasTransactionLayer k ctx
         , HasNetworkLayer IO ctx
-        , HasLogger IO WalletWorkerLog ctx
+        , HasLogger m WalletWorkerLog ctx
+        , MonadRandom m
         )
     => ctx
     -> SelectAssetsParams s result
     -> (s -> Selection -> result)
-    -> ExceptT ErrSelectAssets IO result
 selectAssets ctx params transform = do
+    -> ExceptT ErrSelectAssets m result
     guardPendingWithdrawal
     pp <- liftIO $ currentProtocolParameters nl
-    liftIO $ traceWith tr $ MsgSelectionStart
+    lift $ traceWith tr $ MsgSelectionStart
         (UTxOSelection.availableUTxO $ params ^. #utxoAvailableForInputs)
         (params ^. #outputs)
     mSel <- runExceptT $ performSelection
