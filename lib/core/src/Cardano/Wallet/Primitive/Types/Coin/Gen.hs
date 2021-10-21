@@ -1,3 +1,4 @@
+{-# LANGUAGE NumericUnderscores #-}
 module Cardano.Wallet.Primitive.Types.Coin.Gen
     ( genCoin
     , genCoinPositive
@@ -19,7 +20,11 @@ import Test.QuickCheck
 --------------------------------------------------------------------------------
 
 genCoin :: Gen Coin
-genCoin = sized $ \n -> Coin . fromIntegral <$> choose (0, n)
+genCoin = frequency
+    [ (1, pure (Coin 0))
+    , (5, Coin <$> choose (1_000_000, 1_000_000_000_000))
+    ]
+
 
 shrinkCoin :: Coin -> [Coin]
 shrinkCoin (Coin c) = Coin <$> shrink c
@@ -50,6 +55,7 @@ genCoinFullRange :: Gen Coin
 genCoinFullRange = frequency
     [ (1, pure (Coin 0))
     , (1, pure (maxBound :: Coin))
+    , (1, Coin <$> choose (1000000, 1000000000))
     , (8, Coin <$> choose (1, unCoin (maxBound :: Coin) - 1))
     ]
 

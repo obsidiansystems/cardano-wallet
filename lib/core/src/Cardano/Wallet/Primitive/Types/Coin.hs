@@ -128,7 +128,7 @@ coinToNatural = fromIntegral . unCoin
 
 unsafeNaturalToCoin :: Natural -> Coin
 unsafeNaturalToCoin x | x <= maxBoundNatural = Coin $ fromIntegral x
-                      | otherwise = error "unsafeNaturalToCoin: overflow"
+                      | otherwise = error $ "unsafeNaturalToCoin: " <> show x <> " is too big"
   where
     maxBoundNatural = fromIntegral . unCoin $ maxBound @Coin
 
