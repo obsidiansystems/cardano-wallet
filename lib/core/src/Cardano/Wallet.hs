@@ -874,7 +874,7 @@ restoreWallet ctx wid = db & \DBLayer{..} -> do
     catchFromIO $ chainSync nw tr' $ ChainFollower
         { readLocalTip =
             liftIO $ atomically $ map toChainPoint <$> listCheckpoints wid
-        , rollForward = \tip blocks -> throwInIO $
+        , rollForward = \blocks tip -> throwInIO $
             restoreBlocks @ctx @s @k
                 ctx (contramap MsgFollowLog tr') wid blocks tip
         , rollBackward =

@@ -86,6 +86,7 @@ import Ouroboros.Network.Block
     , Point (..)
     , Tip (..)
     , blockNo
+    , blockPoint
     , blockSlot
     , castTip
     , getTipPoint
@@ -300,7 +301,7 @@ chainSyncWithBlocks tr chainFollower =
     clientStIntersect
         :: P.ClientPipelinedStIntersect block (Point block) (Tip block) m Void
     clientStIntersect = P.ClientPipelinedStIntersect
-        { P.recvMsgIntersectFound = \_point _tip ->
+        { P.recvMsgIntersectFound = \_point tip -> do
             -- Here, the node tells us which  point  from the possible
             -- intersections is the latest point on the chain.
             -- However, we do not have to roll back to this point here;
@@ -309,8 +310,9 @@ chainSyncWithBlocks tr chainFollower =
             --
             -- This behavior is not in the network specification yet, but see
             -- https://input-output-rnd.slack.com/archives/CDA6LUXAQ/p1623322238039900
+            traceWith tr $ MsgChainTip (getTipPoint tip)
             clientStIdle oneByOne
-        , P.recvMsgIntersectNotFound = \_tip ->
+        , P.recvMsgIntersectNotFound = \_tip -> do
             -- No intersection was found.
             -- As the read-pointer on the node could be unknown to us,
             -- we now explicitly request the genesis point.
@@ -362,9 +364,12 @@ chainSyncWithBlocks tr chainFollower =
         -> P.ClientStNext n block (Point block) (Tip block) m Void
     collectResponses blocks Zero = P.ClientStNext
         { P.recvMsgRollForward = \block tip -> do
-            traceWith tr $ MsgChainRollForward block (getTipPoint tip)
+            traceWith tr $ MsgChainTip (getTipPoint tip)
+
             let blocks' = NE.reverse (block :| blocks)
-            rollForward chainFollower tip blocks'
+            traceWith tr $ MsgChainRollForward blocks' (getTipPoint tip)
+            handleRollforward blocks' tip
+
             let distance = tipDistance (blockNo block) tip
             traceWith tr $ MsgTipDistance distance
             let strategy = if distance <= 1
@@ -373,13 +378,13 @@ chainSyncWithBlocks tr chainFollower =
             clientStIdle strategy
 
         , P.recvMsgRollBackward = \point tip -> do
+            traceWith tr $ MsgChainTip (getTipPoint tip)
             r <- handleRollback blocks point tip
             case r of
                 Buffer xs -> do
-                    traceWith tr $ MsgChainRollBackward point (length xs)
                     case reverse xs of
                         []          -> pure ()
-                        (b:blocks') -> rollForward chainFollower tip (b :| blocks')
+                        (b:blocks') -> handleRollforward (b :| blocks') tip
                     clientStIdle oneByOne
                 FollowerExact ->
                     clientStIdle oneByOne
@@ -392,6 +397,7 @@ chainSyncWithBlocks tr chainFollower =
             pure $ P.CollectResponse Nothing $ collectResponses (block:blocks) n
 
         , P.recvMsgRollBackward = \point tip -> do
+            traceWith tr $ MsgChainTip (getTipPoint tip)
             r <- handleRollback blocks point tip
             pure $ P.CollectResponse Nothing $ case r of
                 Buffer xs -> collectResponses xs n
@@ -399,21 +405,30 @@ chainSyncWithBlocks tr chainFollower =
                 FollowerNeedToReNegotiate -> dropResponsesAndRenegotiate n
         }
 
+    handleRollforward :: NonEmpty block -> Tip block -> m ()
+    handleRollforward blocks tip = do
+        rollForward chainFollower blocks tip
+        traceWith tr $ MsgLocalTip (blockPoint $ NE.last blocks)
+
     handleRollback
         :: [block]
         -> Point block
         -> Tip block
         -> m (LocalRollbackResult block)
-    handleRollback buffer point _tip =
-        case rollbackBuffer point buffer of
+    handleRollback buffer point _tip = do
+        let buffer' = rollbackBuffer point buffer
+        traceWith tr $ MsgChainRollBackward point (length buffer')
+        case buffer' of
             [] -> do
-                traceWith tr $ MsgChainRollBackward point 0
                 actual <- rollBackward chainFollower point
                 if actual == point
-                then pure FollowerExact
-                else do
-                    pure FollowerNeedToReNegotiate
-            xs -> pure $ Buffer xs
+                    then do
+                        traceWith tr $ MsgLocalTip point
+                        pure FollowerExact
+                    else do
+                        pure FollowerNeedToReNegotiate
+            xs -> do
+                pure $ Buffer xs
 
     -- | Discards the in-flight requests, and re-negotiates the intersection
     -- afterwards.

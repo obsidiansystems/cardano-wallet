@@ -1,6 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
@@ -8,7 +7,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -29,7 +27,6 @@ module Cardano.Wallet.Network
     , ChainSyncLog (..)
     , mapChainSyncLog
     , withFollowStatsMonitoring
-    , addFollowerLogging
 
     -- * Logging (for testing)
     , FollowStats (..)
@@ -52,7 +49,7 @@ import Cardano.Wallet.Primitive.SyncProgress
     ( SyncProgress (..) )
 import Cardano.Wallet.Primitive.Types
     ( BlockHeader (..)
-    , ChainPoint
+    , ChainPoint (..)
     , ProtocolParameters
     , SlotNo (..)
     , SlottingParameters (..)
@@ -76,8 +73,6 @@ import Data.List.NonEmpty
     ( NonEmpty (..) )
 import Data.Map
     ( Map )
-import Data.Quantity
-    ( Quantity (..) )
 import Data.Set
     ( Set )
 import Data.Text
@@ -90,8 +85,8 @@ import Fmt
     ( pretty )
 import GHC.Generics
     ( Generic )
-import NoThunks.Class
-    ( AllowThunksIn (..), NoThunks (..) )
+-- import NoThunks.Class
+--    ( AllowThunksIn (..), NoThunks (..) )
 import Numeric.Natural
     ( Natural )
 import Safe
@@ -113,6 +108,10 @@ data NetworkLayer m block = NetworkLayer
             BlockHeader
             block
         -> m ()
+        -- ^ Connect to the node and run the ChainSync protocol.
+        -- The callbacks provided in the 'ChainFollower' argument
+        -- are used to handle intersection finding,
+        -- the arrival of new blocks, and rollbacks.
 
     , currentNodeTip
         :: m BlockHeader
@@ -376,6 +375,7 @@ instance ToText ErrPostTx where
 --            step hrf cursor'
 --
 
+-- | A collection of callbacks to use with the 'chainSync' function.
 data ChainFollower m point tip block = ChainFollower
     { readLocalTip :: m [point]
         -- ^ Callback for reading the local tip. Used to negotiate the
@@ -385,7 +385,7 @@ data ChainFollower m point tip block = ChainFollower
         -- served from genesis.
         --
         -- TODO: Could be named readCheckpoints?
-    , rollForward :: tip -> NonEmpty block -> m ()
+    , rollForward :: NonEmpty block -> tip -> m ()
         -- ^ Callback for rolling forward.
         --
         -- Implementors _may_ delete old checkpoints while rolling forward.
@@ -438,39 +438,20 @@ mapChainFollower
 mapChainFollower fpoint12 fpoint21 ftip fblock cf =
     ChainFollower
         { readLocalTip = map fpoint12 <$> readLocalTip cf
-        , rollForward = \t bs -> rollForward cf (ftip t) (fmap fblock bs)
+        , rollForward = \bs tip -> rollForward cf (fmap fblock bs) (ftip tip)
         , rollBackward = fmap fpoint12 . rollBackward cf . fpoint21
         }
-
-addFollowerLogging
-    :: Monad m
-    => Tracer m (FollowLog msg)
-    -> (block -> BlockHeader)
-    -- ^ Extract a 'BlockHeader' for pretty printing.
-    -> ChainFollower m ChainPoint BlockHeader block
-    -> ChainFollower m ChainPoint BlockHeader block
-addFollowerLogging tr fromBlock cf = ChainFollower
-    { readLocalTip = do
-        readLocalTip cf
-    , rollForward = \tip blocks -> do
-        traceWith tr $ MsgApplyBlocks tip (fromBlock <$> blocks)
-        traceWith tr $ MsgFollowerTip (Just tip)
-        rollForward cf tip blocks
-    , rollBackward = \point -> do
-        point' <- rollBackward cf point
-        traceWith tr $ MsgDidRollback point point'
-        pure point'
-    }
 
 {-------------------------------------------------------------------------------
     Logging
 -------------------------------------------------------------------------------}
 
-
--- | Low-level logs for chain-sync
+-- | Low-level logs of the ChainSync mini-protocol
 data ChainSyncLog block point
-    = MsgChainRollForward block point
+    = MsgChainRollForward (NonEmpty block) point
     | MsgChainRollBackward point Int
+    | MsgChainTip point
+    | MsgLocalTip point
     | MsgTipDistance Natural
     deriving (Show, Eq, Generic)
 
@@ -480,24 +461,38 @@ mapChainSyncLog
     -> ChainSyncLog b1 p1
     -> ChainSyncLog b2 p2
 mapChainSyncLog f g = \case
-    MsgChainRollForward block point -> MsgChainRollForward (f block) (g point)
+    MsgChainRollForward blocks tip ->
+        MsgChainRollForward (fmap f blocks) (g tip)
     MsgChainRollBackward point n -> MsgChainRollBackward (g point) n
+    MsgChainTip point -> MsgChainTip (g point)
+    MsgLocalTip point -> MsgLocalTip (g point)
     MsgTipDistance d -> MsgTipDistance d
 
-instance (ToText block, ToText point)
-    => ToText (ChainSyncLog block point) where
+instance ToText (ChainSyncLog BlockHeader ChainPoint) where
     toText = \case
-        MsgChainRollForward b tip ->
-            "ChainSync roll forward: " <> toText b <> " tip is " <> toText tip
+        MsgChainRollForward headers tip ->
+            let buildRange (x :| []) = x
+                buildRange xs = NE.head xs <> ".." <> NE.last xs
+                slots = pretty . slotNo <$> headers
+            in mconcat
+                [ "ChainSync roll forward: "
+                , "applying blocks at slots [", buildRange slots, "]"
+                , ", tip is "
+                , pretty tip
+                ]
         MsgChainRollBackward b 0 ->
-            "ChainSync roll backward: " <> toText b
+            "ChainSync roll backward: " <> pretty b
         MsgChainRollBackward b bufferSize -> mconcat
             [ "ChainSync roll backward: "
-            , toText b
-            , ", handled inside buffer with remaining length "
+            , pretty b
+            , ", handled inside pipeline buffer with remaining length "
             , toText bufferSize
             ]
-        MsgTipDistance d -> "Tip distance: " <> toText d
+        MsgChainTip tip ->
+            "Chain tip: " <> pretty tip
+        MsgLocalTip point ->
+            "Synchronized with point: " <> pretty point
+        MsgTipDistance d -> "Distance to chain tip: " <> toText d <> " blocks"
 
 instance HasPrivacyAnnotation (ChainSyncLog block point)
 
@@ -505,79 +500,38 @@ instance HasSeverityAnnotation (ChainSyncLog block point) where
     getSeverityAnnotation = \case
         MsgChainRollForward{} -> Debug
         MsgChainRollBackward{} -> Debug
+        MsgChainTip{} -> Debug
+        MsgLocalTip{} -> Debug
         MsgTipDistance{} -> Debug
 
+-- | Higher level log of a chain follower.
+-- Includes computed statistics about synchronization progress.
 data FollowLog msg
-    = MsgStartFollowing [BlockHeader]
-    | MsgHaltMonitoring
-    | MsgUnhandledException Text
-    | MsgFollowerTip (Maybe BlockHeader)
-    | MsgFollowStats (FollowStats History)
-    | MsgApplyBlocks BlockHeader (NonEmpty BlockHeader)
+    = MsgChainSync (ChainSyncLog BlockHeader ChainPoint)
     | MsgFollowLog msg -- Inner tracer
-    | MsgWillRollback ChainPoint
-    | MsgDidRollback ChainPoint ChainPoint
-    | MsgFailedRollingBack Text -- Reason
-    | MsgWillIgnoreRollback SlotNo Text -- Reason
-    | MsgChainSync (ChainSyncLog Text Text)
+    | MsgFollowStats (FollowStats History)
+    | MsgStartFollowing [BlockHeader]
     deriving (Show, Eq, Generic)
 
 instance ToText msg => ToText (FollowLog msg) where
     toText = \case
+        MsgChainSync msg -> toText msg
+        MsgFollowLog msg -> toText msg
+        MsgFollowStats s -> toText s
         MsgStartFollowing cps -> mconcat
             [ "Chain following starting. Requesting intersection using "
             , T.pack . show $ length cps
             , " checkpoints"
             , maybe "" ((", the latest being " <>) . pretty) (lastMay cps)
             ]
-        MsgHaltMonitoring ->
-            "Stopping following as requested."
-        MsgUnhandledException err ->
-            "Unexpected error following the chain: " <> err
-        MsgFollowerTip p -> "Tip" <> pretty p
-        MsgFollowStats s -> toText s
-        MsgApplyBlocks tipHdr hdrs ->
-            let slot = pretty . slotNo
-                buildRange (x :| []) = x
-                buildRange xs = NE.head xs <> ".." <> NE.last xs
-                blockHeights = pretty . getQuantity . blockHeight <$> hdrs
-            in mconcat
-                [ "Applying block numbers [", buildRange blockHeights, "]"
-                , "  Wallet/node slots: ", slot (NE.last hdrs)
-                , "/", slot tipHdr
-                ]
-        MsgWillIgnoreRollback sl reason ->
-            "Will ignore rollback to " <> pretty sl
-                <> " because of " <> pretty reason
-        MsgWillRollback sl ->
-            "Will rollback to " <> pretty sl
-        MsgDidRollback requested actual -> mconcat
-            [ "Did rollback to "
-            , pretty actual
-            , " after request to rollback to "
-            , pretty requested
-            ]
-        MsgFailedRollingBack reason -> "Failed rolling back: " <>
-            reason
-        MsgFollowLog msg -> toText msg
-        MsgChainSync msg -> toText msg
 
 instance HasPrivacyAnnotation (FollowLog msg)
 instance HasSeverityAnnotation msg => HasSeverityAnnotation (FollowLog msg) where
     getSeverityAnnotation = \case
-        MsgStartFollowing _ -> Info
-        MsgHaltMonitoring -> Info
-        MsgFollowStats s -> getSeverityAnnotation s
-        MsgFollowerTip _ -> Debug
-        MsgUnhandledException _ -> Error
-        MsgApplyBlocks _ _ -> Debug
-        MsgFollowLog msg -> getSeverityAnnotation msg
-        MsgWillRollback _ -> Debug
-        MsgDidRollback _ _ -> Debug
-        MsgFailedRollingBack _ -> Error
-        MsgWillIgnoreRollback _ _ -> Debug
         MsgChainSync msg -> getSeverityAnnotation msg
-
+        MsgFollowLog msg -> getSeverityAnnotation msg
+        MsgFollowStats s -> getSeverityAnnotation s
+        MsgStartFollowing _ -> Info
 
 {-------------------------------------------------------------------------------
     Log aggregation
@@ -589,18 +543,22 @@ instance HasSeverityAnnotation msg => HasSeverityAnnotation (FollowLog msg) wher
 data FollowStats f = FollowStats
     { blocksApplied :: !(f Int)
     , rollbacks :: !(f Int)
-    , tip :: !(f SlotNo)
+    , localTip :: !(f ChainPoint)
     , time :: !(f UTCTime)
       -- ^ NOTE: Current time is not updated until @flush@ is called.
     , prog :: !(f SyncProgress)
       -- ^ NOTE: prog is not updated until @flush@ is called.
     } deriving (Generic)
 
+{- 2021 October: We no longer try to debug thunks here.
+We have enough strictness annotations that it should be obviously free of thunks.
+
 -- It seems UTCTime contains thunks internally. This shouldn't matter as we
 -- 1. Change it seldom - from @flush@, not from @updateStats@
 -- 2. Set to a completely new value when we do change it.
 deriving via (AllowThunksIn '["time"] (FollowStats History))
     instance (NoThunks (FollowStats History))
+-}
 
 deriving instance Show (FollowStats History)
 deriving instance Eq (FollowStats History)
@@ -623,38 +581,40 @@ hoistStats f (FollowStats a b c d e) =
 data History a = History
     { past :: !a -- ^ Most previously logged state
     , current :: !a -- ^ Not-yet logged state
-    } deriving (Eq, Show, Functor, Generic, NoThunks)
+    } deriving (Eq, Show, Functor, Generic)
 
 initHistory :: a -> History a
 initHistory a = History a a
 
 -- | Modify the present state of a @History state@
 overCurrent :: (a -> a) -> History a -> History a
-overCurrent f (History past curr) = History past (f curr)
+overCurrent f (History pas cur) = History pas (f cur)
 
 emptyStats :: UTCTime -> FollowStats History
-emptyStats t = FollowStats (f 0) (f 0) (f $ SlotNo 0) (f t) (f prog)
+emptyStats t = FollowStats (f 0) (f 0) (f ChainPointAtGenesis) (f t) (f p)
   where
     f = initHistory
-    prog = NotResponding -- Hijacked as an initial value for simplicity.
+    p = NotResponding -- Hijacked as an initial value for simplicity.
 
 -- | Update the current statistics based on a new log message.
-updateStats :: FollowLog msg -> FollowStats History -> FollowStats History
+updateStats
+    :: ChainSyncLog block ChainPoint
+    -> FollowStats History -> FollowStats History
 updateStats msg s = case msg of
-    MsgApplyBlocks _tip blocks ->
+    MsgChainRollForward blocks _tip ->
         s { blocksApplied = overCurrent (+ NE.length blocks) (blocksApplied s) }
-    MsgDidRollback _ _ ->
+    MsgChainRollBackward _ 0 ->
+        -- rolled back in a way that could not be handled by the pipeline buffer
         s { rollbacks = overCurrent (1 +) (rollbacks s) }
-    MsgFollowerTip p ->
-        s { tip = overCurrent (const $ slotFromMaybeBh p) (tip s) }
+    MsgLocalTip point ->
+        s { localTip = overCurrent (const point) (localTip s) }
     _ -> s
-  where
-    slotFromMaybeBh = maybe (SlotNo 0) slotNo
 
 instance ToText (FollowStats History) where
-    toText st@(FollowStats b r tip t prog) = syncStatus <> " " <> stats <> sevExpl
+    toText st@(FollowStats b r tip t progress) =
+        syncStatus <> " " <> stats <> sevExpl
       where
-        syncStatus = case prog of
+        syncStatus = case progress of
             History NotResponding Ready ->
                 "In sync."
             History Ready Ready ->
@@ -667,13 +627,13 @@ instance ToText (FollowStats History) where
                 "Fell out of sync (" <> (pretty p) <> ")"
             History _ (Syncing p) ->
                 "Syncing (" <> (pretty p) <> ")"
-            History past NotResponding ->
-                "Not responding. Previously " <> (pretty past) <> "."
+            History past_ NotResponding ->
+                "Not responding. Previously " <> (pretty past_) <> "."
         stats = mconcat
             [ "Applied " <> pretty (using (-) b) <> " blocks, "
             , pretty (using (-) r) <> " rollbacks "
             , "in the last " <> pretty (using diffUTCTime t) <> ". "
-            , "Currently at slot " <> pretty (current tip) <> "."
+            , "Currently tip is" <> pretty (current tip) <> "."
             ]
           where
             using f x = f (current x) (past x)
@@ -714,7 +674,7 @@ flushStats
     -> IO (FollowStats History)
 flushStats t calcSyncProgress var = do
     s <- atomically $ takeTMVar var
-    p <- calcSyncProgress (current $ tip s)
+    p <- calcSyncProgress $ pseudoPointSlot $ current $ localTip s
     let s' = s { time = overCurrent (const t) (time s) }
                { prog = overCurrent (const p) (prog s) }
     atomically $ putTMVar var $ hoistStats forgetPast s'
@@ -722,32 +682,37 @@ flushStats t calcSyncProgress var = do
   where
     forgetPast (History _past curr) = initHistory curr
 
+-- See NOTE [PointSlotNo]
+pseudoPointSlot :: ChainPoint -> SlotNo
+pseudoPointSlot ChainPointAtGenesis = SlotNo 0
+pseudoPointSlot (ChainPoint slot _) = slot
+
 -- | Starts a new thread for monitoring health and statistics from
 -- the returned @FollowLog msg@.
 -- Returns a modified tracer which collects the statistics.
 withFollowStatsMonitoring
     :: Tracer IO (FollowLog msg)
     -> (SlotNo -> IO SyncProgress)
-    -> ((Tracer IO (FollowLog msg)) -> IO ())
+    -> (Tracer IO (ChainSyncLog BlockHeader ChainPoint) -> IO ())
     -> IO ()
-withFollowStatsMonitoring tr calcSyncProgress act = do
+withFollowStatsMonitoring trFollowLog calcSyncProgress act = do
     t0  <- getCurrentTime
     var <- newTMVarIO $ emptyStats t0
-    let tr' = flip contramapM tr $ \msg -> do
+    let trChainSyncLog = flip contramapM trFollowLog $ \msg -> do
             atomically $ do
                 s <- takeTMVar var
                 putTMVar var $! updateStats msg s
-            pure msg
-    traceWith tr' $ MsgFollowerTip Nothing
+            pure $ MsgChainSync msg
+    traceWith trChainSyncLog $ MsgLocalTip ChainPointAtGenesis
     race_
-        (act tr')
+        (act trChainSyncLog)
         (loop var startupDelay)
   where
     loop var delay = do
         threadDelay delay
         t <- getCurrentTime
         s <- flushStats t calcSyncProgress var
-        traceWith tr $ MsgFollowStats s
+        traceWith trFollowLog $ MsgFollowStats s
         let delay' =
                 if (current (prog s)) == Ready
                 then restoredDelay

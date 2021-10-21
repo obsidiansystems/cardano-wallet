@@ -65,10 +65,9 @@ import Cardano.Wallet.Logging
     ( BracketLog, bracketTracer, produceTimings )
 import Cardano.Wallet.Network
     ( ChainFollower (..)
+    , ChainSyncLog (..)
     , ErrPostTx (..)
-    , FollowLog (..)
     , NetworkLayer (..)
-    , addFollowerLogging
     , mapChainFollower
     , mapChainSyncLog
     , withFollowStatsMonitoring
@@ -86,7 +85,6 @@ import Cardano.Wallet.Primitive.Types.Tx
 import Cardano.Wallet.Shelley.Compatibility
     ( StandardCrypto
     , fromAlonzoPParams
-    , fromCardanoHash
     , fromLedgerPParams
     , fromNonMyopicMemberRewards
     , fromPoint
@@ -166,8 +164,6 @@ import Data.Quantity
     ( Percentage )
 import Data.Set
     ( Set )
-import Data.Text
-    ( Text )
 import Data.Text.Class
     ( ToText (..) )
 import Data.Time.Clock
@@ -207,7 +203,7 @@ import Ouroboros.Consensus.Node.NetworkProtocolVersion
 import Ouroboros.Consensus.Shelley.Ledger.Config
     ( CodecConfig (..), getCompactGenesis )
 import Ouroboros.Network.Block
-    ( Point, Tip (..), blockPoint, getPoint )
+    ( Point, Tip (..) )
 import Ouroboros.Network.Client.Wallet
     ( LSQ (..)
     , LocalStateQueryCmd (..)
@@ -238,8 +234,6 @@ import Ouroboros.Network.NodeToClient
     , nodeToClientProtocols
     , withIOManager
     )
-import Ouroboros.Network.Point
-    ( WithOrigin (..) )
 import Ouroboros.Network.Protocol.ChainSync.Client
     ( chainSyncClientPeer )
 import Ouroboros.Network.Protocol.ChainSync.ClientPipelined
@@ -280,7 +274,6 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
-import qualified Ouroboros.Network.Point as Point
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 
@@ -346,21 +339,21 @@ withNetworkLayerBase tr net np conn versionData tol action = do
     let readCurrentNodeEra = atomically $ readTMVar eraVar
 
     action $ NetworkLayer
-        { chainSync = \followTr' follower -> do
+        { chainSync = \trFollowLog follower -> do
             let withStats = withFollowStatsMonitoring
-                    followTr'
+                    trFollowLog
                     (_syncProgress interpreterVar)
-            withStats $ \followTr -> do
-                let addLogging =
-                        addFollowerLogging followTr (toCardanoBlockHeader gp)
+            withStats $ \trChainSyncLog -> do
+                let mapB = toCardanoBlockHeader gp
+                    mapP = fromPoint
                 client <- mkWalletClient
-                    followTr
+                    (contramap (mapChainSyncLog mapB mapP) trChainSyncLog)
                     (mapChainFollower
                         toPoint
                         fromPoint
                         (fromTip' gp)
                         id
-                        (addLogging follower))
+                        follower)
                     cfg
                 connectClient tr handlers client versionData conn
 
@@ -593,13 +586,12 @@ type NetworkClient m = NodeToClientVersion -> OuroborosApplication
 -- | Construct a network client with the given communication channel, for the
 -- purposes of syncing blocks to a single wallet.
 mkWalletClient
-    :: forall m msg. (MonadThrow m, MonadST m, MonadTimer m, MonadAsync m)
-    => Tracer m (FollowLog msg)
-    -> ChainFollower m
-        (Point (CardanoBlock StandardCrypto))
-        (Tip (CardanoBlock StandardCrypto))
-        (CardanoBlock StandardCrypto)
-    -> CodecConfig (CardanoBlock StandardCrypto)
+    :: forall m block
+    . ( block ~ CardanoBlock (StandardCrypto)
+      , MonadThrow m, MonadST m, MonadTimer m, MonadAsync m)
+    => Tracer m (ChainSyncLog block (Point block))
+    -> ChainFollower m (Point block) (Tip block) block
+    -> CodecConfig block
     -> m (NetworkClient m)
 mkWalletClient tr follower cfg = do
     pure $ \v -> nodeToClientProtocols (const $ return $ NodeToClientProtocols
@@ -607,9 +599,7 @@ mkWalletClient tr follower cfg = do
             InitiatorProtocolOnly $ MuxPeerRaw $ \channel ->
                 runPipelinedPeer nullTracer (cChainSyncCodec $ codecs v cfg) channel
                 $ chainSyncClientPeerPipelined
-                $ chainSyncWithBlocks
-                    (contramap (MsgChainSync . mapChainSyncLog showB showP) tr)
-                    follower
+                $ chainSyncWithBlocks tr follower
 
         , localTxSubmissionProtocol =
             doNothingProtocol
@@ -617,20 +607,6 @@ mkWalletClient tr follower cfg = do
         , localStateQueryProtocol =
             doNothingProtocol
         }) v
-  where
-    showB :: CardanoBlock StandardCrypto -> Text
-    showB = showP . blockPoint
-
-    showP :: Point (CardanoBlock StandardCrypto) -> Text
-    showP p = case (getPoint p) of
-        Origin -> "Origin"
-        At blk -> mconcat
-            [ "(slotNo "
-            , T.pack $ show $ unSlotNo $ Point.blockPointSlot blk
-            , ", "
-            , pretty $ fromCardanoHash $ Point.blockPointHash blk
-            , ")"
-            ]
 
 -- | Construct a network client with the given communication channel, for the
 -- purposes of querying delegations and rewards.

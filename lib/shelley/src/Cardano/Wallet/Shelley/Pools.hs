@@ -556,7 +556,7 @@ monitorStakePools followTr (NetworkParameters gp sp _pp) nl DBLayer{..} =
 
             chainSync nl followTr $ ChainFollower
                 { readLocalTip = map toChainPoint <$> initCursor
-                , rollForward  = \tip blocks -> rollForward blocks tip innerTr
+                , rollForward  = \blocks tip -> rollForward blocks tip innerTr
                 , rollBackward = rollback
                 }
 
