@@ -33,7 +33,7 @@ module Cardano.Wallet.Network
 
     -- * Logging (for testing)
     , FollowStats (..)
-    , LogState (..)
+    , History (..)
     , emptyStats
     , updateStats
     ) where
@@ -442,9 +442,28 @@ mapChainFollower fpoint12 fpoint21 ftip fblock cf =
         , rollBackward = fmap fpoint12 . rollBackward cf . fpoint21
         }
 
+addFollowerLogging
+    :: Monad m
+    => Tracer m (FollowLog msg)
+    -> (block -> BlockHeader)
+    -- ^ Extract a 'BlockHeader' for pretty printing.
+    -> ChainFollower m ChainPoint BlockHeader block
+    -> ChainFollower m ChainPoint BlockHeader block
+addFollowerLogging tr fromBlock cf = ChainFollower
+    { readLocalTip = do
+        readLocalTip cf
+    , rollForward = \tip blocks -> do
+        traceWith tr $ MsgApplyBlocks tip (fromBlock <$> blocks)
+        traceWith tr $ MsgFollowerTip (Just tip)
+        rollForward cf tip blocks
+    , rollBackward = \point -> do
+        point' <- rollBackward cf point
+        traceWith tr $ MsgDidRollback point point'
+        pure point'
+    }
 
 {-------------------------------------------------------------------------------
-                                    Logging
+    Logging
 -------------------------------------------------------------------------------}
 
 
@@ -493,7 +512,7 @@ data FollowLog msg
     | MsgHaltMonitoring
     | MsgUnhandledException Text
     | MsgFollowerTip (Maybe BlockHeader)
-    | MsgFollowStats (FollowStats LogState)
+    | MsgFollowStats (FollowStats History)
     | MsgApplyBlocks BlockHeader (NonEmpty BlockHeader)
     | MsgFollowLog msg -- Inner tracer
     | MsgWillRollback ChainPoint
@@ -560,13 +579,12 @@ instance HasSeverityAnnotation msg => HasSeverityAnnotation (FollowLog msg) wher
         MsgChainSync msg -> getSeverityAnnotation msg
 
 
---
--- Log aggregation
---
-
+{-------------------------------------------------------------------------------
+    Log aggregation
+-------------------------------------------------------------------------------}
 -- | Statistics of interest from the follow-function.
 --
--- The @f@ allows us to use @LogState@ to keep track of both current and
+-- The @f@ allows us to use 'History' to keep track of both current and
 -- previously logged stats, and perform operations over it in a nice way.
 data FollowStats f = FollowStats
     { blocksApplied :: !(f Int)
@@ -581,72 +599,47 @@ data FollowStats f = FollowStats
 -- It seems UTCTime contains thunks internally. This shouldn't matter as we
 -- 1. Change it seldom - from @flush@, not from @updateStats@
 -- 2. Set to a completely new value when we do change it.
-deriving via (AllowThunksIn '["time"] (FollowStats LogState))
-    instance (NoThunks (FollowStats LogState))
+deriving via (AllowThunksIn '["time"] (FollowStats History))
+    instance (NoThunks (FollowStats History))
 
-deriving instance Show (FollowStats LogState)
-deriving instance Eq (FollowStats LogState)
+deriving instance Show (FollowStats History)
+deriving instance Eq (FollowStats History)
 
 -- | Change the @f@ wrapping each record field.
 hoistStats
     :: (forall a. f a -> g a)
     -> FollowStats f
     -> FollowStats g
-hoistStats f FollowStats{blocksApplied,rollbacks,tip,time,prog} = FollowStats
-    { blocksApplied = f blocksApplied
-    , rollbacks = f rollbacks
-    , tip = f tip
-    , time = f time
-    , prog = f prog
-    }
+hoistStats f (FollowStats a b c d e) =
+    FollowStats (f a) (f b) (f c) (f d) (f e)
 
--- | For keeping track of what we have logged and what we have not.
+-- | A 'History' consists of a past value and a present value.
+-- Useful for keeping track of past logs.
 --
 -- The idea is to
 -- 1. Reconstruct a model of the @current@ @state@ using a @Trace@
 -- 2. Sometimes log the difference between the @current@ state and the most
 -- recently logged one.
-data LogState a = LogState
-    { prev :: !a -- ^ Most previously logged state
+data History a = History
+    { past :: !a -- ^ Most previously logged state
     , current :: !a -- ^ Not-yet logged state
     } deriving (Eq, Show, Functor, Generic, NoThunks)
 
-initLogState :: a -> LogState a
-initLogState a = LogState a a
+initHistory :: a -> History a
+initHistory a = History a a
 
--- | Modify the current state of a @LogState state@
-overCurrent :: (a -> a) -> LogState a -> LogState a
-overCurrent f (LogState prev cur) = LogState prev (f cur)
+-- | Modify the present state of a @History state@
+overCurrent :: (a -> a) -> History a -> History a
+overCurrent f (History past curr) = History past (f curr)
 
--- | /The way/ to log the current stats.
---
--- Returns the current stats from the TMVar, and sets each @prev@ state to
--- @current@ as new value of the @TMVar@.
-flush
-    :: UTCTime
-    -> (SlotNo -> IO SyncProgress)
-    -> StrictTMVar IO (FollowStats LogState)
-    -> IO (FollowStats LogState)
-flush t calcSyncProgress var = do
-    s <- atomically $ takeTMVar var
-    p <- calcSyncProgress (current $ tip s)
-    -- This is where we need to update the time and sync progress
-    let s' = s { time = overCurrent (const t) (time s) }
-               { prog = overCurrent (const p) (prog s) }
-    atomically $ putTMVar var (hoistStats forgetPrev s')
-    return s'
-  where
-    forgetPrev (LogState _prev cur) = LogState cur cur
-
-emptyStats :: UTCTime -> FollowStats LogState
+emptyStats :: UTCTime -> FollowStats History
 emptyStats t = FollowStats (f 0) (f 0) (f $ SlotNo 0) (f t) (f prog)
   where
-    f = initLogState
+    f = initHistory
     prog = NotResponding -- Hijacked as an initial value for simplicity.
 
-
--- | Update the stats based on a new log message.
-updateStats :: FollowLog msg -> FollowStats LogState -> FollowStats LogState
+-- | Update the current statistics based on a new log message.
+updateStats :: FollowLog msg -> FollowStats History -> FollowStats History
 updateStats msg s = case msg of
     MsgApplyBlocks _tip blocks ->
         s { blocksApplied = overCurrent (+ NE.length blocks) (blocksApplied s) }
@@ -658,24 +651,24 @@ updateStats msg s = case msg of
   where
     slotFromMaybeBh = maybe (SlotNo 0) slotNo
 
-instance ToText (FollowStats LogState) where
+instance ToText (FollowStats History) where
     toText st@(FollowStats b r tip t prog) = syncStatus <> " " <> stats <> sevExpl
       where
         syncStatus = case prog of
-            LogState NotResponding Ready ->
+            History NotResponding Ready ->
                 "In sync."
-            LogState Ready Ready ->
+            History Ready Ready ->
                 "Still in sync."
-            LogState NotResponding NotResponding ->
+            History NotResponding NotResponding ->
                 "Still not syncing."
-            LogState (Syncing _p) Ready ->
+            History (Syncing _p) Ready ->
                 "In sync!"
-            LogState Ready (Syncing p) ->
+            History Ready (Syncing p) ->
                 "Fell out of sync (" <> (pretty p) <> ")"
-            LogState _ (Syncing p) ->
+            History _ (Syncing p) ->
                 "Syncing (" <> (pretty p) <> ")"
-            LogState prev NotResponding ->
-                "Not responding. Previously " <> (pretty prev) <> "."
+            History past NotResponding ->
+                "Not responding. Previously " <> (pretty past) <> "."
         stats = mconcat
             [ "Applied " <> pretty (using (-) b) <> " blocks, "
             , pretty (using (-) r) <> " rollbacks "
@@ -683,7 +676,7 @@ instance ToText (FollowStats LogState) where
             , "Currently at slot " <> pretty (current tip) <> "."
             ]
           where
-            using f x = f (current x) (prev x)
+            using f x = f (current x) (past x)
 
         sevExpl = maybe
             ""
@@ -696,52 +689,50 @@ instance ToText (FollowStats LogState) where
 -- But this check might be in the wrong place. Might be better to
 -- produce new logs from inside the updateStats function and immeditely
 -- warn there.
-explainedSeverityAnnotation :: FollowStats LogState -> (Severity, Maybe Text)
+explainedSeverityAnnotation :: FollowStats History -> (Severity, Maybe Text)
 explainedSeverityAnnotation s
-        | progressMovedBackwards = (Warning, Just "progress decreased")
-        | noBlocks && notRestored = (Warning, Just "not applying blocks")
-        | nowInSync = (Notice, Nothing)
-        | otherwise = (Info, Nothing)
+    | progressMovedBackwards = (Warning, Just "progress decreased")
+    | noBlocks && notRestored = (Warning, Just "not applying blocks")
+    | nowInSync = (Notice, Nothing)
+    | otherwise = (Info, Nothing)
   where
-    progressMovedBackwards = current (prog s) < prev (prog s)
-    nowInSync = current (prog s) == Ready && prev (prog s) < Ready
+    progressMovedBackwards = current (prog s) < past (prog s)
+    nowInSync = current (prog s) == Ready && past (prog s) < Ready
     notRestored = current (prog s) /= Ready
-    noBlocks = (current (blocksApplied s) - prev (blocksApplied s)) <= 0
+    noBlocks = (current (blocksApplied s) - past (blocksApplied s)) <= 0
 
-
-instance HasSeverityAnnotation (FollowStats LogState) where
+instance HasSeverityAnnotation (FollowStats History) where
     getSeverityAnnotation = fst . explainedSeverityAnnotation
 
-addFollowerLogging
-    :: Monad m
-    => Tracer m (FollowLog msg)
-    -> (block -> BlockHeader)
-    -- ^ Extract a 'BlockHeader' for pretty printing.
-    -> ChainFollower m ChainPoint BlockHeader block
-    -> ChainFollower m ChainPoint BlockHeader block
-addFollowerLogging tr fromBlock cf = ChainFollower
-    { readLocalTip = do
-        readLocalTip cf
-    , rollForward = \tip blocks -> do
-        traceWith tr $ MsgApplyBlocks tip (fromBlock <$> blocks)
-        traceWith tr $ MsgFollowerTip (Just tip)
-        rollForward cf tip blocks
-    , rollBackward = \point -> do
-        point' <- rollBackward cf point
-        traceWith tr $ MsgDidRollback point point'
-        pure point'
-    }
+-- | Update the 'TMVar' holding the 'FollowStats'@ @'History'
+-- to forget the 'past' values and replace them with the 'current' ones.
+-- Also update the time and sync process.
+flushStats
+    :: UTCTime
+    -> (SlotNo -> IO SyncProgress)
+    -> StrictTMVar IO (FollowStats History)
+    -> IO (FollowStats History)
+flushStats t calcSyncProgress var = do
+    s <- atomically $ takeTMVar var
+    p <- calcSyncProgress (current $ tip s)
+    let s' = s { time = overCurrent (const t) (time s) }
+               { prog = overCurrent (const p) (prog s) }
+    atomically $ putTMVar var $ hoistStats forgetPast s'
+    return s'
+  where
+    forgetPast (History _past curr) = initHistory curr
 
 -- | Starts a new thread for monitoring health and statistics from
 -- the returned @FollowLog msg@.
+-- Returns a modified tracer which collects the statistics.
 withFollowStatsMonitoring
     :: Tracer IO (FollowLog msg)
     -> (SlotNo -> IO SyncProgress)
     -> ((Tracer IO (FollowLog msg)) -> IO ())
     -> IO ()
 withFollowStatsMonitoring tr calcSyncProgress act = do
-    t0' <- getCurrentTime
-    var <- newTMVarIO $ emptyStats t0'
+    t0  <- getCurrentTime
+    var <- newTMVarIO $ emptyStats t0
     let tr' = flip contramapM tr $ \msg -> do
             atomically $ do
                 s <- takeTMVar var
@@ -755,7 +746,7 @@ withFollowStatsMonitoring tr calcSyncProgress act = do
     loop var delay = do
         threadDelay delay
         t <- getCurrentTime
-        s <- flush t calcSyncProgress var
+        s <- flushStats t calcSyncProgress var
         traceWith tr $ MsgFollowStats s
         let delay' =
                 if (current (prog s)) == Ready
