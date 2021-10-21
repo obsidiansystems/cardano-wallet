@@ -293,9 +293,10 @@ chainSyncWithBlocks tr chainFollower =
         :: m (P.ClientPipelinedStIdle 'Z block (Point block) (Tip block) m Void)
     clientStNegotiateIntersection = do
         points <- readLocalTip chainFollower
-        pure $ if null points
-            then clientStNegotiateGenesis -- see documentation for readLocalTip
-            else P.SendMsgFindIntersect points clientStIntersect
+        -- Cave: An empty list is interpreted as requesting the genesis point.
+        let points' = if null points then [Point Origin] else points
+        traceWith tr $ MsgChainFindIntersect points'
+        pure $ P.SendMsgFindIntersect points' clientStIntersect
 
     -- Receive the result of the MsgFindIntersection request
     clientStIntersect
@@ -319,17 +320,20 @@ chainSyncWithBlocks tr chainFollower =
             --
             -- See also
             -- https://input-output-rnd.slack.com/archives/CDA6LUXAQ/p1634644689103100
-            pure clientStNegotiateGenesis
+            clientStNegotiateGenesis
             }
 
     -- Explictly negotiate the genesis point
     clientStNegotiateGenesis
-        :: P.ClientPipelinedStIdle 'Z block (Point block) (Tip block) m Void
-    clientStNegotiateGenesis = P.SendMsgFindIntersect [Point Origin] $
-        clientStIntersect
-            { P.recvMsgIntersectNotFound = \_tip ->
-                throwIO ErrChainSyncNoIntersectGenesis
-            }
+        :: m (P.ClientPipelinedStIdle 'Z block (Point block) (Tip block) m Void)
+    clientStNegotiateGenesis = do
+        let genesis = [Point Origin]
+        traceWith tr $ MsgChainFindIntersect genesis
+        pure $ P.SendMsgFindIntersect genesis $
+            clientStIntersect
+                { P.recvMsgIntersectNotFound = \_tip ->
+                    throwIO ErrChainSyncNoIntersectGenesis
+                }
 
     clientStIdle
         :: RequestNextStrategy m 'Z block

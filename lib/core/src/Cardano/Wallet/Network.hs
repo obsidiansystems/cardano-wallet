@@ -98,7 +98,6 @@ import UnliftIO.Concurrent
 
 import qualified Cardano.Api.Shelley as Node
 import qualified Data.List.NonEmpty as NE
-import qualified Data.Text as T
 
 data NetworkLayer m block = NetworkLayer
     { chainSync
@@ -448,7 +447,8 @@ mapChainFollower fpoint12 fpoint21 ftip fblock cf =
 
 -- | Low-level logs of the ChainSync mini-protocol
 data ChainSyncLog block point
-    = MsgChainRollForward (NonEmpty block) point
+    = MsgChainFindIntersect [point]
+    | MsgChainRollForward (NonEmpty block) point
     | MsgChainRollBackward point Int
     | MsgChainTip point
     | MsgLocalTip point
@@ -461,8 +461,9 @@ mapChainSyncLog
     -> ChainSyncLog b1 p1
     -> ChainSyncLog b2 p2
 mapChainSyncLog f g = \case
+    MsgChainFindIntersect points -> MsgChainFindIntersect (g <$> points)
     MsgChainRollForward blocks tip ->
-        MsgChainRollForward (fmap f blocks) (g tip)
+        MsgChainRollForward (f <$> blocks) (g tip)
     MsgChainRollBackward point n -> MsgChainRollBackward (g point) n
     MsgChainTip point -> MsgChainTip (g point)
     MsgLocalTip point -> MsgLocalTip (g point)
@@ -470,6 +471,12 @@ mapChainSyncLog f g = \case
 
 instance ToText (ChainSyncLog BlockHeader ChainPoint) where
     toText = \case
+        MsgChainFindIntersect cps -> mconcat
+            [ "Requesting intersection using "
+            , toText (length cps)
+            , " points"
+            , maybe "" ((", the latest being " <>) . pretty) (lastMay cps)
+            ]
         MsgChainRollForward headers tip ->
             let buildRange (x :| []) = x
                 buildRange xs = NE.head xs <> ".." <> NE.last xs
@@ -489,7 +496,7 @@ instance ToText (ChainSyncLog BlockHeader ChainPoint) where
             , toText bufferSize
             ]
         MsgChainTip tip ->
-            "Chain tip: " <> pretty tip
+            "Node tip is " <> pretty tip
         MsgLocalTip point ->
             "Synchronized with point: " <> pretty point
         MsgTipDistance d -> "Distance to chain tip: " <> toText d <> " blocks"
@@ -498,6 +505,7 @@ instance HasPrivacyAnnotation (ChainSyncLog block point)
 
 instance HasSeverityAnnotation (ChainSyncLog block point) where
     getSeverityAnnotation = \case
+        MsgChainFindIntersect{} -> Debug
         MsgChainRollForward{} -> Debug
         MsgChainRollBackward{} -> Debug
         MsgChainTip{} -> Debug
@@ -510,7 +518,7 @@ data FollowLog msg
     = MsgChainSync (ChainSyncLog BlockHeader ChainPoint)
     | MsgFollowLog msg -- Inner tracer
     | MsgFollowStats (FollowStats History)
-    | MsgStartFollowing [BlockHeader]
+    | MsgStartFollowing
     deriving (Show, Eq, Generic)
 
 instance ToText msg => ToText (FollowLog msg) where
@@ -518,12 +526,7 @@ instance ToText msg => ToText (FollowLog msg) where
         MsgChainSync msg -> toText msg
         MsgFollowLog msg -> toText msg
         MsgFollowStats s -> toText s
-        MsgStartFollowing cps -> mconcat
-            [ "Chain following starting. Requesting intersection using "
-            , T.pack . show $ length cps
-            , " checkpoints"
-            , maybe "" ((", the latest being " <>) . pretty) (lastMay cps)
-            ]
+        MsgStartFollowing -> "Chain following starting."
 
 instance HasPrivacyAnnotation (FollowLog msg)
 instance HasSeverityAnnotation msg => HasSeverityAnnotation (FollowLog msg) where
@@ -531,7 +534,7 @@ instance HasSeverityAnnotation msg => HasSeverityAnnotation (FollowLog msg) wher
         MsgChainSync msg -> getSeverityAnnotation msg
         MsgFollowLog msg -> getSeverityAnnotation msg
         MsgFollowStats s -> getSeverityAnnotation s
-        MsgStartFollowing _ -> Info
+        MsgStartFollowing -> Info
 
 {-------------------------------------------------------------------------------
     Log aggregation
@@ -550,7 +553,7 @@ data FollowStats f = FollowStats
       -- ^ NOTE: prog is not updated until @flush@ is called.
     } deriving (Generic)
 
-{- 2021 October: We no longer try to debug thunks here.
+{- 2021 October: We temporariliy disable trying to test thunks here.
 We have enough strictness annotations that it should be obviously free of thunks.
 
 -- It seems UTCTime contains thunks internally. This shouldn't matter as we
@@ -682,10 +685,11 @@ flushStats t calcSyncProgress var = do
   where
     forgetPast (History _past curr) = initHistory curr
 
--- See NOTE [PointSlotNo]
-pseudoPointSlot :: ChainPoint -> SlotNo
-pseudoPointSlot ChainPointAtGenesis = SlotNo 0
-pseudoPointSlot (ChainPoint slot _) = slot
+    -- See NOTE [PointSlotNo].
+    -- Fortunately, this is not important for the use here.
+    pseudoPointSlot :: ChainPoint -> SlotNo
+    pseudoPointSlot ChainPointAtGenesis = SlotNo 0
+    pseudoPointSlot (ChainPoint slot _) = slot
 
 -- | Starts a new thread for monitoring health and statistics from
 -- the returned @FollowLog msg@.

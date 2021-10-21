@@ -67,6 +67,7 @@ import Cardano.Wallet.Network
     ( ChainFollower (..)
     , ChainSyncLog (..)
     , ErrPostTx (..)
+    , FollowLog (..)
     , NetworkLayer (..)
     , mapChainFollower
     , mapChainSyncLog
@@ -265,7 +266,6 @@ import qualified Cardano.Ledger.Crypto as SL
 import qualified Cardano.Wallet.Primitive.SyncProgress as SyncProgress
 import qualified Cardano.Wallet.Primitive.Types as W
 import qualified Cardano.Wallet.Primitive.Types.Coin as W
-import qualified Cardano.Wallet.Primitive.Types.Hash as W
 import qualified Cardano.Wallet.Primitive.Types.RewardAccount as W
 import qualified Cardano.Wallet.Primitive.Types.Tx as W
 import qualified Codec.CBOR.Term as CBOR
@@ -346,15 +346,16 @@ withNetworkLayerBase tr net np conn versionData tol action = do
             withStats $ \trChainSyncLog -> do
                 let mapB = toCardanoBlockHeader gp
                     mapP = fromPoint
-                client <- mkWalletClient
-                    (contramap (mapChainSyncLog mapB mapP) trChainSyncLog)
-                    (mapChainFollower
-                        toPoint
-                        fromPoint
-                        (fromTip' gp)
-                        id
-                        follower)
-                    cfg
+                let client = mkWalletClient
+                        (contramap (mapChainSyncLog mapB mapP) trChainSyncLog)
+                        (mapChainFollower
+                            toPoint
+                            fromPoint
+                            (fromTip' gp)
+                            id
+                            follower)
+                        cfg
+                traceWith trFollowLog MsgStartFollowing
                 connectClient tr handlers client versionData conn
 
         , currentNodeTip =
@@ -592,9 +593,9 @@ mkWalletClient
     => Tracer m (ChainSyncLog block (Point block))
     -> ChainFollower m (Point block) (Tip block) block
     -> CodecConfig block
-    -> m (NetworkClient m)
-mkWalletClient tr follower cfg = do
-    pure $ \v -> nodeToClientProtocols (const $ return $ NodeToClientProtocols
+    -> NetworkClient m
+mkWalletClient tr follower cfg v =
+    nodeToClientProtocols (const $ return $ NodeToClientProtocols
         { localChainSyncProtocol =
             InitiatorProtocolOnly $ MuxPeerRaw $ \channel ->
                 runPipelinedPeer nullTracer (cChainSyncCodec $ codecs v cfg) channel
@@ -1146,9 +1147,6 @@ data NetworkLayerLog where
         -> NetworkLayerLog
     MsgHandshakeTracer ::
       (WithMuxBearer (ConnectionId LocalAddress) HandshakeTrace) -> NetworkLayerLog
-    MsgFindIntersection :: [W.BlockHeader] -> NetworkLayerLog
-    MsgIntersectionFound :: (W.Hash "BlockHeader") -> NetworkLayerLog
-    MsgFindIntersectionTimeout :: NetworkLayerLog
     MsgPostTx :: W.SealedTx -> NetworkLayerLog
     MsgNodeTip :: W.BlockHeader -> NetworkLayerLog
     MsgProtocolParameters :: W.ProtocolParameters -> W.SlottingParameters -> NetworkLayerLog
@@ -1200,14 +1198,6 @@ instance ToText NetworkLayerLog where
             T.pack (show msg)
         MsgHandshakeTracer (WithMuxBearer conn h) ->
             pretty conn <> " " <> T.pack (show h)
-        MsgFindIntersectionTimeout ->
-            "Couldn't find an intersection in a timely manner. Retrying..."
-        MsgFindIntersection points -> T.unwords
-            [ "Looking for an intersection with the node's local chain with:"
-            , T.intercalate ", " (pretty <$> points)
-            ]
-        MsgIntersectionFound point -> T.unwords
-            [ "Intersection found:", pretty point ]
         MsgPostTx tx ->
             "Posting transaction, serialized as:\n"+|hexF (serialisedTx tx)|+""
         MsgLocalStateQuery client msg ->
@@ -1276,10 +1266,6 @@ instance HasSeverityAnnotation NetworkLayerLog where
         MsgConnectionLost{}                -> Warning
         MsgTxSubmission{}                  -> Info
         MsgHandshakeTracer{}               -> Debug
-        MsgFindIntersectionTimeout         -> Warning
-        MsgFindIntersection{}              -> Debug
-        -- MsgFindIntersection is duplicated by MsgStartFollowing
-        MsgIntersectionFound{}             -> Debug
         MsgPostTx{}                        -> Debug
         MsgLocalStateQuery{}               -> Debug
         MsgNodeTip{}                       -> Debug
