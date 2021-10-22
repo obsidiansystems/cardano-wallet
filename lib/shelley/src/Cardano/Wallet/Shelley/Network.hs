@@ -64,10 +64,10 @@ import Cardano.Wallet.Byron.Compatibility
 import Cardano.Wallet.Logging
     ( BracketLog, bracketTracer, produceTimings )
 import Cardano.Wallet.Network
-    ( ChainFollower (..)
+    ( ChainFollowLog (..)
+    , ChainFollower (..)
     , ChainSyncLog (..)
     , ErrPostTx (..)
-    , FollowLog (..)
     , NetworkLayer (..)
     , mapChainFollower
     , mapChainSyncLog

@@ -23,7 +23,7 @@ module Cardano.Wallet.Network
     -- * Chain following
     , ChainFollower (..)
     , mapChainFollower
-    , FollowLog (..)
+    , ChainFollowLog (..)
     , ChainSyncLog (..)
     , mapChainSyncLog
     , withFollowStatsMonitoring
@@ -101,7 +101,7 @@ import qualified Data.List.NonEmpty as NE
 
 data NetworkLayer m block = NetworkLayer
     { chainSync
-        :: forall msg. Tracer IO (FollowLog msg)
+        :: Tracer IO ChainFollowLog
         -> ChainFollower m
             ChainPoint
             BlockHeader
@@ -514,25 +514,22 @@ instance HasSeverityAnnotation (ChainSyncLog block point) where
 
 -- | Higher level log of a chain follower.
 -- Includes computed statistics about synchronization progress.
-data FollowLog msg
+data ChainFollowLog
     = MsgChainSync (ChainSyncLog BlockHeader ChainPoint)
-    | MsgFollowLog msg -- Inner tracer
     | MsgFollowStats (FollowStats History)
     | MsgStartFollowing
     deriving (Show, Eq, Generic)
 
-instance ToText msg => ToText (FollowLog msg) where
+instance ToText ChainFollowLog where
     toText = \case
         MsgChainSync msg -> toText msg
-        MsgFollowLog msg -> toText msg
         MsgFollowStats s -> toText s
         MsgStartFollowing -> "Chain following starting."
 
-instance HasPrivacyAnnotation (FollowLog msg)
-instance HasSeverityAnnotation msg => HasSeverityAnnotation (FollowLog msg) where
+instance HasPrivacyAnnotation ChainFollowLog
+instance HasSeverityAnnotation ChainFollowLog where
     getSeverityAnnotation = \case
         MsgChainSync msg -> getSeverityAnnotation msg
-        MsgFollowLog msg -> getSeverityAnnotation msg
         MsgFollowStats s -> getSeverityAnnotation s
         MsgStartFollowing -> Info
 
@@ -689,18 +686,21 @@ flushStats t calcSyncProgress var = do
     pseudoPointSlot ChainPointAtGenesis = SlotNo 0
     pseudoPointSlot (ChainPoint slot _) = slot
 
--- | Starts a new thread for monitoring health and statistics from
--- the returned @FollowLog msg@.
--- Returns a modified tracer which collects the statistics.
+-- | Monitors health and statistics by inspecting the messages
+-- submitted to a 'ChainSyncLog' tracer.
+--
+-- Statistics are computed in regular time intervals.
+-- In order to do that, the monitor runs in separate thread.
+-- The results are submitted to the outer 'ChainFollowLog' tracer.
 withFollowStatsMonitoring
-    :: Tracer IO (FollowLog msg)
+    :: Tracer IO ChainFollowLog
     -> (SlotNo -> IO SyncProgress)
     -> (Tracer IO (ChainSyncLog BlockHeader ChainPoint) -> IO ())
     -> IO ()
-withFollowStatsMonitoring trFollowLog calcSyncProgress act = do
+withFollowStatsMonitoring tr calcSyncProgress act = do
     t0  <- getCurrentTime
     var <- newTMVarIO $ emptyStats t0
-    let trChainSyncLog = flip contramapM trFollowLog $ \msg -> do
+    let trChainSyncLog = flip contramapM tr $ \msg -> do
             atomically $ do
                 s <- takeTMVar var
                 putTMVar var $! updateStats msg s
@@ -714,7 +714,7 @@ withFollowStatsMonitoring trFollowLog calcSyncProgress act = do
         threadDelay delay
         t <- getCurrentTime
         s <- flushStats t calcSyncProgress var
-        traceWith trFollowLog $ MsgFollowStats s
+        traceWith tr $ MsgFollowStats s
         let delay' =
                 if (current (prog s)) == Ready
                 then restoredDelay

@@ -1,5 +1,5 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Cardano.Wallet.NetworkSpec
@@ -11,7 +11,7 @@ import Prelude
 import Cardano.Wallet.Gen
     ( genBlockHeader, genChainPoint, genSlotNo )
 import Cardano.Wallet.Network
-    ( ErrPostTx (..), ChainSyncLog (..), emptyStats, updateStats )
+    ( ChainSyncLog (..), ErrPostTx (..), emptyStats, updateStats )
 import Cardano.Wallet.Primitive.Types
     ( BlockHeader (..), ChainPoint (..) )
 import Data.Time.Clock
