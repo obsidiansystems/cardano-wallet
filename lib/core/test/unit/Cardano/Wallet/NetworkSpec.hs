@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Cardano.Wallet.NetworkSpec
@@ -10,9 +11,9 @@ import Prelude
 import Cardano.Wallet.Gen
     ( genBlockHeader, genChainPoint, genSlotNo )
 import Cardano.Wallet.Network
-    ( ErrPostTx (..), FollowLog (..), emptyStats, updateStats )
+    ( ErrPostTx (..), ChainSyncLog (..), emptyStats, updateStats )
 import Cardano.Wallet.Primitive.Types
-    ( BlockHeader (..) )
+    ( BlockHeader (..), ChainPoint (..) )
 import Data.Time.Clock
     ( getCurrentTime )
 import NoThunks.Class
@@ -47,9 +48,9 @@ spec = do
 instance Arbitrary block => Arbitrary (ChainSyncLog block ChainPoint) where
     arbitrary = oneof
         [ MsgChainRollForward <$> genNonEmpty <*> genChainPoint
-        , MsgChainRollBackward <$> genChainPoint <*> oneof [0,1,7]
+        , MsgChainRollBackward <$> genChainPoint <*> arbitrary
         , MsgChainTip <$> genChainPoint
-        , MsgLocaltip <$> genChainPoint
+        , MsgLocalTip <$> genChainPoint
         ]
       where
         genNonEmpty = (NE.fromList . getNonEmpty) <$> arbitrary

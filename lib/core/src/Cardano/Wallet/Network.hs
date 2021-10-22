@@ -85,8 +85,8 @@ import Fmt
     ( pretty )
 import GHC.Generics
     ( Generic )
--- import NoThunks.Class
---    ( AllowThunksIn (..), NoThunks (..) )
+import NoThunks.Class
+    ( AllowThunksIn (..), NoThunks (..) )
 import Numeric.Natural
     ( Natural )
 import Safe
@@ -553,15 +553,11 @@ data FollowStats f = FollowStats
       -- ^ NOTE: prog is not updated until @flush@ is called.
     } deriving (Generic)
 
-{- 2021 October: We temporariliy disable trying to test thunks here.
-We have enough strictness annotations that it should be obviously free of thunks.
-
 -- It seems UTCTime contains thunks internally. This shouldn't matter as we
 -- 1. Change it seldom - from @flush@, not from @updateStats@
 -- 2. Set to a completely new value when we do change it.
 deriving via (AllowThunksIn '["time"] (FollowStats History))
     instance (NoThunks (FollowStats History))
--}
 
 deriving instance Show (FollowStats History)
 deriving instance Eq (FollowStats History)
@@ -585,6 +581,8 @@ data History a = History
     { past :: !a -- ^ Most previously logged state
     , current :: !a -- ^ Not-yet logged state
     } deriving (Eq, Show, Functor, Generic)
+
+instance NoThunks a => NoThunks (History a)
 
 initHistory :: a -> History a
 initHistory a = History a a
