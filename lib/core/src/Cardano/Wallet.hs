@@ -918,12 +918,16 @@ it is statically guaranteed that they cannot be thrown in the 'IO' monad.
 
 On the flip side, visibility on the type level does imply that
 the calling thread (here 'chainSync') needs to be either polymorphic
-in the checked exceptions or aware of them. Unfortunately, this is
-a burden if the calling thread (here 'chainSync') is used in different
-contexts with different sets of checked exceptions.
+in the checked exceptions or aware of them.
+Making 'chainSync' aware of the checked exception is currently
+not a good idea, because this function is used in different contexts,
+which have different checked exceptions.
+So, it would need to be polymorophic in the the undelrying monad,
+but at present, 'chainSync' is restricted to 'IO' beause some
+of its constituents are also restricted to 'IO'.
 
 As a workaround / solution, we wrap the checked exception into a new type
-which can be thrown in the common context 'IO'.
+which can be thrown in the 'IO' monad.
 When the calling thread exits, we catch the exception again
 and present it as a checked exception.
 
