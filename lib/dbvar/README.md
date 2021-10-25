@@ -26,7 +26,10 @@ The main modules are:
       by adding an additional constraint on the `inject` function.)
 * [Data.DBVar](src/Data/DBVar.hs) — delta encodings
     * Contains the `DBVar` mutable variable abstraction.
-      The intention is that these variables are stored in-memory
+      These variables store a Haskell value in memory,
+      but updating the variables is done with a delta encoding
+      and also has the side effect of writing the value to a `Store`,
+      which typically represents a file or database on the hard disk.
     * Contains the `Store` mutable storage abstraction,
       which can store values and their delta encodings.
       Unlike `DBVar`, a `Store` need not be stored fully in memory.

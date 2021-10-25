@@ -48,19 +48,22 @@ import Data.Delta
 {-------------------------------------------------------------------------------
     DBVar
 -------------------------------------------------------------------------------}
--- | A 'DBVar'@ m delta@ is a mutable reference to a value of type @a@.
+-- | A 'DBVar'@ m delta@ is a mutable reference to a Haskell value of type @a@.
 -- The type @delta@ is a delta encoding for this value type @a@, 
 -- that is we have @a ~ @'Base'@ delta@.
 --
--- The value is kept in-memory.
+-- The Haskell value is stored in memory.
 -- However, whenever the value is updated, a copy of will be written
--- to persistent storage like a file or database on the hard disk.
--- For efficient updates, the delta encoding @delta@ is used.
+-- to persistent storage like a file or database on the hard disk;
+-- any particular storage is specified by the 'Store' type.
+-- For efficient updates, the delta encoding @delta@ is used in the update.
 --
 -- Concurrency:
 --
 -- * Updates are atomic and will block other updates.
--- * Reads will /not/ be blocked during (most of) an update.
+-- * Reads will /not/ be blocked during an update
+--   (except for a small moment where the new value atomically
+--    replaces the old one).
 data DBVar m delta = DBVar
     { readDBVar_   :: m (Base delta)
     , updateDBVar_ :: delta -> m ()
@@ -144,8 +147,8 @@ newWithCache update a = do
     Store
 -------------------------------------------------------------------------------}
 {- |
-A 'Store' is an on-disk storage facility for values of type @a ~@'Base'@ da@.
-Typical use cases are a file or a database.
+A 'Store' is a storage facility for Haskell values of type @a ~@'Base'@ da@.
+Typical use cases are a file or a database on the hard disk.
 
 A 'Store' has many similarities with an 'Embedding'.
 The main difference is that storing value in a 'Store' has side effects.
