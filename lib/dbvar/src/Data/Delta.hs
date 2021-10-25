@@ -29,7 +29,7 @@ module Data.Delta (
     , replaceFromApply
 
     -- * Internal
-    , inject, project, Machine (..), pairMachine, fromState,
+    , inject, project, Machine (..), idle, pairMachine, fromState,
     ) where
 
 import Prelude
@@ -370,6 +370,10 @@ instance Semigroupoid Machine where
         case fab ada of
             (db, mab) -> case fbc (b,db) of
                 (dc, mbc) -> (dc, mbc `o` mab)
+
+-- | Identity machine starting from a base type.
+idle :: Delta da => Base da -> Machine da da
+idle a0 = Machine a0 $ \(a1,da) -> let a2 = apply da a1 in (da, idle a2)
 
 -- | Pair two 'Machine'.
 pairMachine
