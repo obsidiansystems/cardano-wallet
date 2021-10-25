@@ -42,7 +42,7 @@ import Data.Semigroupoid
 import Data.Table
     ( DeltaTable (..), Pile (..), Table )
 
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Table as Table
 
 {-------------------------------------------------------------------------------
