@@ -614,16 +614,13 @@ genSelectionParams genPreselectedInputs genUTxOIndex' = do
 
 shrinkSelectionParams :: SelectionParams -> [SelectionParams]
 shrinkSelectionParams =
-    shrinkMapBy tupleToParams paramsToTuple $ liftShrink6
+    liftShrink6 SelectionParams
         (shrinkList shrinkTxOut)
         (shrinkUTxOSelection)
         (shrinkCoin)
         (shrinkCoin)
         (shrinkTokenMap)
         (shrinkTokenMap)
-  where
-    paramsToTuple (SelectionParams a b c d e f) = (a, b, c, d, e, f)
-    tupleToParams (a, b, c, d, e, f) = (SelectionParams a b c d e f)
 
 prop_performSelection_small
     :: MockSelectionConstraints
