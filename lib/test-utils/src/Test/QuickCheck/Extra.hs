@@ -174,19 +174,23 @@ liftShrink3 s1 s2 s3 (a1, a2, a3) =
 -- | Similar to 'liftShrink2', but applicable to 4-tuples.
 --
 liftShrink4
-    :: (a1 -> [a1])
+    :: HasFields4 r a1 a2 a3 a4
+    => (a1 -> a2 -> a3 -> a4 -> r)
+    -> (a1 -> [a1])
     -> (a2 -> [a2])
     -> (a3 -> [a3])
     -> (a4 -> [a4])
-    -> (a1, a2, a3, a4)
-    -> [(a1, a2, a3, a4)]
-liftShrink4 s1 s2 s3 s4 (a1, a2, a3, a4) =
+    -> r
+    -> [r]
+liftShrink4 f s1 s2 s3 s4 r =
     interleaveRoundRobin
-    [ [ (a1', a2 , a3 , a4 ) | a1' <- s1 a1 ]
-    , [ (a1 , a2', a3 , a4 ) | a2' <- s2 a2 ]
-    , [ (a1 , a2 , a3', a4 ) | a3' <- s3 a3 ]
-    , [ (a1 , a2 , a3 , a4') | a4' <- s4 a4 ]
+    [ [ f a1' a2  a3  a4  | a1' <- s1 a1 ]
+    , [ f a1  a2' a3  a4  | a2' <- s2 a2 ]
+    , [ f a1  a2  a3' a4  | a3' <- s3 a3 ]
+    , [ f a1  a2  a3  a4' | a4' <- s4 a4 ]
     ]
+  where
+    (a1, a2, a3, a4) = toTuple4 r
 
 -- | Similar to 'liftShrink2', but applicable to 5-tuples.
 --

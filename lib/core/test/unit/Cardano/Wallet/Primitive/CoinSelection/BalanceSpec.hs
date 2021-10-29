@@ -2041,14 +2041,11 @@ genMockSelectionConstraints = MockSelectionConstraints
 shrinkMockSelectionConstraints
     :: MockSelectionConstraints -> [MockSelectionConstraints]
 shrinkMockSelectionConstraints =
-    shrinkMapBy tupleToMock mockToTuple $ liftShrink4
+    liftShrink4 MockSelectionConstraints
         shrinkMockAssessTokenBundleSize
         shrinkMockComputeMinimumAdaQuantity
         shrinkMockComputeMinimumCost
         shrinkMockComputeSelectionLimit
-  where
-    mockToTuple (MockSelectionConstraints a b c d) = (a, b, c, d)
-    tupleToMock (a, b, c, d) = (MockSelectionConstraints a b c d)
 
 unMockSelectionConstraints :: MockSelectionConstraints -> SelectionConstraints
 unMockSelectionConstraints m = SelectionConstraints
