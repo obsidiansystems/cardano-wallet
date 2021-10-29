@@ -640,7 +640,7 @@ genSelectionParams = SelectionParams
 
 shrinkSelectionParams :: SelectionParams -> [SelectionParams]
 shrinkSelectionParams =
-    shrinkMapBy ofTuple toTuple $ liftShrink9
+    liftShrink9 SelectionParams
         shrinkAssetsToBurn
         shrinkAssetsToMint
         shrinkOutputsToCover
@@ -650,9 +650,6 @@ shrinkSelectionParams =
         shrinkCollateralRequirement
         shrinkUTxOAvailableForCollateral
         shrinkUTxOAvailableForInputs
-  where
-    toTuple (SelectionParams a b c d e f g h i) = (a, b, c, d, e, f, g, h, i)
-    ofTuple (a, b, c, d, e, f, g, h, i) = (SelectionParams a b c d e f g h i)
 
 --------------------------------------------------------------------------------
 -- Assets to mint and burn
