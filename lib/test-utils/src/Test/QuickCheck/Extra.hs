@@ -191,21 +191,25 @@ liftShrink4 s1 s2 s3 s4 (a1, a2, a3, a4) =
 -- | Similar to 'liftShrink2', but applicable to 5-tuples.
 --
 liftShrink5
-    :: (a1 -> [a1])
+    :: HasFields5 r a1 a2 a3 a4 a5
+    => (a1 -> a2 -> a3 -> a4 -> a5 -> r)
+    -> (a1 -> [a1])
     -> (a2 -> [a2])
     -> (a3 -> [a3])
     -> (a4 -> [a4])
     -> (a5 -> [a5])
-    -> (a1, a2, a3, a4, a5)
-    -> [(a1, a2, a3, a4, a5)]
-liftShrink5 s1 s2 s3 s4 s5 (a1, a2, a3, a4, a5) =
+    -> r
+    -> [r]
+liftShrink5 f s1 s2 s3 s4 s5 r =
     interleaveRoundRobin
-    [ [ (a1', a2 , a3 , a4 , a5 ) | a1' <- s1 a1 ]
-    , [ (a1 , a2', a3 , a4 , a5 ) | a2' <- s2 a2 ]
-    , [ (a1 , a2 , a3', a4 , a5 ) | a3' <- s3 a3 ]
-    , [ (a1 , a2 , a3 , a4', a5 ) | a4' <- s4 a4 ]
-    , [ (a1 , a2 , a3 , a4 , a5') | a5' <- s5 a5 ]
+    [ [ f a1' a2  a3  a4  a5  | a1' <- s1 a1 ]
+    , [ f a1  a2' a3  a4  a5  | a2' <- s2 a2 ]
+    , [ f a1  a2  a3' a4  a5  | a3' <- s3 a3 ]
+    , [ f a1  a2  a3  a4' a5  | a4' <- s4 a4 ]
+    , [ f a1  a2  a3  a4  a5' | a5' <- s5 a5 ]
     ]
+  where
+    (a1, a2, a3, a4, a5) = toTuple5 r
 
 -- | Similar to 'liftShrink2', but applicable to 6-tuples.
 --
