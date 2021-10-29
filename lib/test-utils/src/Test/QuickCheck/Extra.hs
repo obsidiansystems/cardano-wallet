@@ -254,7 +254,9 @@ liftShrink7 s1 s2 s3 s4 s5 s6 s7 (a1, a2, a3, a4, a5, a6, a7) =
 -- | Similar to 'liftShrink2', but applicable to 8-tuples.
 --
 liftShrink8
-    :: (a1 -> [a1])
+    :: HasFields8 r a1 a2 a3 a4 a5 a6 a7 a8
+    => (a1 -> a2 -> a3 -> a4 -> a5 -> a6 -> a7 -> a8 -> r)
+    -> (a1 -> [a1])
     -> (a2 -> [a2])
     -> (a3 -> [a3])
     -> (a4 -> [a4])
@@ -262,19 +264,21 @@ liftShrink8
     -> (a6 -> [a6])
     -> (a7 -> [a7])
     -> (a8 -> [a8])
-    -> (a1, a2, a3, a4, a5, a6, a7, a8)
-    -> [(a1, a2, a3, a4, a5, a6, a7, a8)]
-liftShrink8 s1 s2 s3 s4 s5 s6 s7 s8 (a1, a2, a3, a4, a5, a6, a7, a8) =
+    -> r
+    -> [r]
+liftShrink8 f s1 s2 s3 s4 s5 s6 s7 s8 r =
     interleaveRoundRobin
-    [ [ (a1', a2 , a3 , a4 , a5 , a6 , a7 , a8 ) | a1' <- s1 a1 ]
-    , [ (a1 , a2', a3 , a4 , a5 , a6 , a7 , a8 ) | a2' <- s2 a2 ]
-    , [ (a1 , a2 , a3', a4 , a5 , a6 , a7 , a8 ) | a3' <- s3 a3 ]
-    , [ (a1 , a2 , a3 , a4', a5 , a6 , a7 , a8 ) | a4' <- s4 a4 ]
-    , [ (a1 , a2 , a3 , a4 , a5', a6 , a7 , a8 ) | a5' <- s5 a5 ]
-    , [ (a1 , a2 , a3 , a4 , a5 , a6', a7 , a8 ) | a6' <- s6 a6 ]
-    , [ (a1 , a2 , a3 , a4 , a5 , a6 , a7', a8 ) | a7' <- s7 a7 ]
-    , [ (a1 , a2 , a3 , a4 , a5 , a6 , a7 , a8') | a8' <- s8 a8 ]
+    [ [ f a1' a2  a3  a4  a5  a6  a7  a8  | a1' <- s1 a1 ]
+    , [ f a1  a2' a3  a4  a5  a6  a7  a8  | a2' <- s2 a2 ]
+    , [ f a1  a2  a3' a4  a5  a6  a7  a8  | a3' <- s3 a3 ]
+    , [ f a1  a2  a3  a4' a5  a6  a7  a8  | a4' <- s4 a4 ]
+    , [ f a1  a2  a3  a4  a5' a6  a7  a8  | a5' <- s5 a5 ]
+    , [ f a1  a2  a3  a4  a5  a6' a7  a8  | a6' <- s6 a6 ]
+    , [ f a1  a2  a3  a4  a5  a6  a7' a8  | a7' <- s7 a7 ]
+    , [ f a1  a2  a3  a4  a5  a6  a7  a8' | a8' <- s8 a8 ]
     ]
+  where
+    (a1, a2, a3, a4, a5, a6, a7, a8) = toTuple8 r
 
 -- | Similar to 'liftShrink2', but applicable to 9-tuples.
 --
