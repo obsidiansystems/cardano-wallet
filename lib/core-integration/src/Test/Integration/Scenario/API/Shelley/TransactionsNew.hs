@@ -479,7 +479,7 @@ spec = describe "NEW_SHELLEY_TRANSACTIONS" $ do
         let addrDest = (addrs !! addrIx) ^. #id
         let expectedTxOutTarget = WalletOutput $ ApiWalletOutput
                 { address = addrDest
-                , amount = Quantity 0
+                , amount = Quantity amt
                 , assets = ApiT TokenMap.empty
                 , derivationPath = NE.fromList
                     [ ApiT (DerivationIndex 2147485500)
