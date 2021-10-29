@@ -159,17 +159,21 @@ genSized2With f genA genB = uncurry f <$> genSized2 genA genB
 -- | Similar to 'liftShrink2', but applicable to 3-tuples.
 --
 liftShrink3
-    :: (a1 -> [a1])
+    :: HasFields3 r a1 a2 a3
+    => (a1 -> a2 -> a3 -> r)
+    -> (a1 -> [a1])
     -> (a2 -> [a2])
     -> (a3 -> [a3])
-    -> (a1, a2, a3)
-    -> [(a1, a2, a3)]
-liftShrink3 s1 s2 s3 (a1, a2, a3) =
+    -> r
+    -> [r]
+liftShrink3 f s1 s2 s3 r =
     interleaveRoundRobin
-    [ [ (a1', a2 , a3 ) | a1' <- s1 a1 ]
-    , [ (a1 , a2', a3 ) | a2' <- s2 a2 ]
-    , [ (a1 , a2 , a3') | a3' <- s3 a3 ]
+    [ [ f a1' a2  a3  | a1' <- s1 a1 ]
+    , [ f a1  a2' a3  | a2' <- s2 a2 ]
+    , [ f a1  a2  a3' | a3' <- s3 a3 ]
     ]
+  where
+    (a1, a2, a3) = toTuple3 r
 
 -- | Similar to 'liftShrink2', but applicable to 4-tuples.
 --
