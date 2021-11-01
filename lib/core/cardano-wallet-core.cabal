@@ -195,6 +195,7 @@ library
       Cardano.Wallet.Primitive.Delegation.State
       Cardano.Wallet.Primitive.AddressDiscovery.Sequential
       Cardano.Wallet.Primitive.AddressDiscovery.Shared
+      Cardano.Wallet.Primitive.AddressDiscovery.SingleAddress
       Cardano.Wallet.Primitive.SyncProgress
       Cardano.Wallet.Primitive.CoinSelection
       Cardano.Wallet.Primitive.CoinSelection.Balance

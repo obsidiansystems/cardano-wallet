@@ -110,6 +110,7 @@ import Cardano.Wallet.DB.Sqlite.TH
     , SeqStateAddress (..)
     , SeqStatePendingIx (..)
     , SharedState (..)
+    , SingleAddressState (..)
     , StakeKeyCertificate (..)
     , TxCollateral (..)
     , TxIn (..)
@@ -148,6 +149,10 @@ import Cardano.Wallet.Primitive.AddressDiscovery
     ( GetPurpose )
 import Cardano.Wallet.Primitive.AddressDiscovery.Shared
     ( CredentialType (..) )
+import Cardano.Wallet.Primitive.AddressDiscovery.SingleAddress
+    ( SingleAddress (..)
+    , mkSingleAddress
+    )
 import Cardano.Wallet.Primitive.Slotting
     ( TimeInterpreter
     , epochOf
@@ -2674,6 +2679,15 @@ instance
                 let ctx = Seq.ParentContextShared accXPub pTemplate dTemplateM
                 pool <- lift $ selectAddressPool @n wid sl g ctx
                 pure $ Shared.SharedState prefix (Shared.ReadyFields pool)
+
+instance PersistState (SingleAddress n) where
+    insertState (wid, _) (SingleAddress addr _) = do
+        deleteWhere [SingleAddressStateWalletId ==. wid]
+        insert_ $ SingleAddressState wid addr
+
+    selectState (wid, _) = runMaybeT $ do
+        Entity _ (SingleAddressState _ addr) <- MaybeT $ selectFirst [SingleAddressStateWalletId ==. wid] []
+        pure $ mkSingleAddress Proxy addr
 
 insertAddressSharedPool
     :: forall (n :: NetworkDiscriminant) k. (GetPurpose k, Typeable n)

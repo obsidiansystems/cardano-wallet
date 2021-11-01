@@ -55,6 +55,8 @@ import Cardano.Wallet.Api
     , SharedWallets
     , ShelleyMigrations
     , ShelleyTransactions
+    , SingleAddressWallets
+    , SingleAddressTransactions
     , StakePools
     , WalletKeys
     , Wallets
@@ -92,6 +94,7 @@ import Cardano.Wallet.Api.Server
     , mkLegacyWallet
     , mkSharedWallet
     , mkShelleyWallet
+    , mkSingleAddressWallet
     , patchSharedWallet
     , postAccountPublicKey
     , postAccountWallet
@@ -102,6 +105,7 @@ import Cardano.Wallet.Api.Server
     , postRandomWallet
     , postRandomWalletFromXPrv
     , postSharedWallet
+    , postSingleAddressWallet
     , postTransactionFeeOld
     , postTransactionOld
     , postTrezorWallet
@@ -166,6 +170,8 @@ import Cardano.Wallet.Primitive.AddressDiscovery.Sequential
     ( SeqState )
 import Cardano.Wallet.Primitive.AddressDiscovery.Shared
     ( CredentialType (..), SharedState )
+import Cardano.Wallet.Primitive.AddressDiscovery.SingleAddress
+    ( SingleAddress (..) )
 import Cardano.Wallet.Primitive.Types
     ( PoolMetadataSource (..), SmashServer (..), poolMetadataSource )
 import Cardano.Wallet.Shelley.Compatibility
@@ -197,7 +203,7 @@ import Data.Text.Class
 import Network.Ntp
     ( NtpClient )
 import Servant
-    ( (:<|>) (..), Handler (..), NoContent (..), Server, err400 )
+    ( (:<|>) (..), Handler (..), NoContent (..), Server, err400, throwError )
 import Servant.Server
     ( ServerError (..) )
 import Type.Reflection
@@ -224,10 +230,11 @@ server
     -> ApiLayer (SeqState n IcarusKey) IcarusKey
     -> ApiLayer (SeqState n ShelleyKey) ShelleyKey
     -> ApiLayer (SharedState n SharedKey) SharedKey
+    -> ApiLayer (SingleAddress n) ShelleyKey
     -> StakePoolLayer
     -> NtpClient
     -> Server (Api n ApiStakePool)
-server byron icarus shelley multisig spl ntp =
+server byron icarus shelley multisig single spl ntp =
          wallets
     :<|> walletKeys
     :<|> assets
@@ -249,6 +256,8 @@ server byron icarus shelley multisig spl ntp =
     :<|> sharedWallets multisig
     :<|> sharedWalletKeys multisig
     :<|> sharedAddresses multisig
+    :<|> singleAddressWallets single
+    :<|> singleAddressTransactions single
   where
     wallets :: Server Wallets
     wallets = deleteWallet shelley
@@ -564,6 +573,31 @@ server byron icarus shelley multisig spl ntp =
         -> Server (SharedAddresses n)
     sharedAddresses apilayer =
              listAddresses apilayer (normalizeSharedAddress @_ @SharedKey @n)
+
+    singleAddressWallets
+        :: ApiLayer (SingleAddress n) ShelleyKey
+        -> Server (SingleAddressWallets n)
+    singleAddressWallets apilayer =
+             postSingleAddressWallet @_ @_ @ShelleyKey apilayer
+        :<|> (fmap fst . getWallet apilayer mkSingleAddressWallet)
+        :<|> (fmap fst <$> listWallets apilayer mkSingleAddressWallet)
+        :<|> deleteWallet apilayer
+
+    singleAddressTransactions
+        :: ApiLayer (SingleAddress n) ShelleyKey
+        -> Server (SingleAddressTransactions n)
+    singleAddressTransactions apilayer =
+             listTransactions apilayer
+        :<|> getTransaction apilayer
+        :<|> coinSelections'
+      where
+        coinSelections' :: Server (CoinSelections n)
+        coinSelections' = (\wid ascd -> case ascd of
+            (ApiSelectForPayment ascp) ->
+                selectCoins apilayer () wid ascp
+            (ApiSelectForDelegation _) ->
+                Handler (throwError $ apiError err400 BadRequest ("Not supported"))
+            )
 
 postAnyAddress
     :: NetworkId

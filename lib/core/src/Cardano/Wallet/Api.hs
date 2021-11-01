@@ -143,6 +143,15 @@ module Cardano.Wallet.Api
     , SharedAddresses
         , ListSharedAddresses
 
+      -- * SingleAddress Wallets
+    , SingleAddressWallets
+        , PostSingleAddressWallet
+        , GetSingleAddressWallet
+        , ListSingleAddressWallets
+        , DeleteSingleAddressWallet
+
+    , SingleAddressTransactions
+
     , Proxy_
         , PostExternalTransaction
 
@@ -195,6 +204,8 @@ import Cardano.Wallet.Api.Types
     , ApiSharedWallet
     , ApiSharedWalletPatchData
     , ApiSharedWalletPostData
+    , ApiSingleAddressWalletPostData
+    , ApiSingleAddressWallet
     , ApiSignTransactionPostData
     , ApiStakeKeysT
     , ApiT
@@ -321,6 +332,8 @@ type Api n apiPool =
     :<|> SharedWallets
     :<|> SharedWalletKeys
     :<|> SharedAddresses n
+    :<|> SingleAddressWallets n
+    :<|> SingleAddressTransactions n
 
 {-------------------------------------------------------------------------------
                                   Wallets
@@ -1056,6 +1069,37 @@ type ListSharedAddresses n = "shared-wallets"
     :> "addresses"
     :> QueryParam "state" (ApiT AddressState)
     :> Get '[JSON] [ApiAddressT n]
+
+{-------------------------------------------------------------------------------
+                                 Single Address Wallet
+
+-------------------------------------------------------------------------------}
+type SingleAddressWallets n =
+         PostSingleAddressWallet n
+    :<|> GetSingleAddressWallet
+    :<|> ListSingleAddressWallets
+    :<|> DeleteSingleAddressWallet
+
+type PostSingleAddressWallet n = "single-address-wallets"
+    :> ReqBody '[JSON] (ApiSingleAddressWalletPostData n)
+    :> PostCreated '[JSON] ApiSingleAddressWallet
+
+type GetSingleAddressWallet = "single-address-wallets"
+    :> Capture "walletId" (ApiT WalletId)
+    :> Get '[JSON] ApiSingleAddressWallet
+
+type ListSingleAddressWallets = "single-address-wallets"
+    :> Get '[JSON] [ApiSingleAddressWallet]
+
+type DeleteSingleAddressWallet = "single-address-wallets"
+    :> Capture "walletId" (ApiT WalletId)
+    :> DeleteNoContent
+
+
+type SingleAddressTransactions n =
+         "single-address-wallets" :> ListTransactions n
+    :<|> "single-address-wallets" :> GetTransaction n
+    :<|> "single-address-wallets" :> SelectCoins n
 
 {-------------------------------------------------------------------------------
                                    Proxy_

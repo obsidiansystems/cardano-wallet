@@ -92,6 +92,8 @@ module Cardano.Wallet.Api.Server
     , mkSharedWallet
     , mintBurnAssets
     , balanceTransaction
+    , postSingleAddressWallet
+    , mkSingleAddressWallet
 
     -- * Server error responses
     , IsServerError(..)
@@ -237,6 +239,8 @@ import Cardano.Wallet.Api.Types
     , ApiSharedWalletPostData (..)
     , ApiSharedWalletPostDataFromAccountPubX (..)
     , ApiSharedWalletPostDataFromMnemonics (..)
+    , ApiSingleAddressWallet (..)
+    , ApiSingleAddressWalletPostData (..)
     , ApiSignTransactionPostData (..)
     , ApiSlotId (..)
     , ApiSlotReference (..)
@@ -354,6 +358,10 @@ import Cardano.Wallet.Primitive.AddressDiscovery.Shared
     , mkSharedStateFromAccountXPub
     , mkSharedStateFromRootXPrv
     , validateScriptTemplates
+    )
+import Cardano.Wallet.Primitive.AddressDiscovery.SingleAddress
+    ( SingleAddress (..)
+    , mkSingleAddress
     )
 import Cardano.Wallet.Primitive.CoinSelection
     ( SelectionError (..)
@@ -597,6 +605,7 @@ import qualified Cardano.Wallet.Primitive.Types.UTxOIndex as UTxOIndex
 import qualified Cardano.Wallet.Primitive.Types.UTxOSelection as UTxOSelection
 import qualified Cardano.Wallet.Registry as Registry
 import qualified Control.Concurrent.Concierge as Concierge
+import qualified Crypto.Hash as Crypto
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
@@ -1110,6 +1119,62 @@ patchSharedWallet ctx liftKey cred (ApiT wid) body = do
       cosigner = getApiT (body ^. #cosigner)
       (ApiAccountPublicKey accXPubApiT) = (body ^. #accountPublicKey)
       accXPub = getApiT accXPubApiT
+
+
+--------------------- Single Address wallet
+
+postSingleAddressWallet
+    :: forall ctx s k n.
+        ( s ~ SingleAddress n
+        , ctx ~ ApiLayer s k
+        , HasDBFactory s k ctx
+        , HasWorkerRegistry s k ctx
+        , k ~ ShelleyKey
+        )
+    => ctx
+    -> ApiSingleAddressWalletPostData n
+    -> Handler ApiSingleAddressWallet
+postSingleAddressWallet ctx body = do
+    let state = mkSingleAddress Proxy addr
+    void $ liftHandler $ createWalletWorker @_ @s @k ctx wid
+        (\wrk -> W.createWallet @(WorkerCtx ctx) @_ @s @k wrk wid wName state)
+        idleWorker
+    fst <$> getWallet ctx (mkSingleAddressWallet @_ @s @k) (ApiT wid)
+  where
+    wName = getApiT (body ^. #name)
+    addr = getApiT (fst $ body ^. #address)
+    Address addrBytes = addr
+    wid = WalletId $ Crypto.hash addrBytes
+
+mkSingleAddressWallet
+    :: forall ctx s k n.
+        ( ctx ~ ApiLayer s k
+        , s ~ SingleAddress n
+        )
+    => MkApiWallet ctx s ApiSingleAddressWallet
+mkSingleAddressWallet ctx wid cp meta pending progress = do
+    let ti = timeInterpreter $ ctx ^. networkLayer
+    tip' <- liftIO $ getWalletTip
+        (neverFails "getWalletTip wallet tip should be behind node tip" ti)
+        cp
+    let available = availableBalance pending cp
+    let total = totalBalance pending reward cp
+        reward = coinFromQuantity $ Quantity (0 :: Word32)
+    pure $ ApiSingleAddressWallet
+        { id = ApiT wid
+        , name = ApiT $ meta ^. #name
+        , balance = ApiWalletBalance
+            { available = coinToQuantity (available ^. #coin)
+            , total = coinToQuantity (total ^. #coin)
+            , reward = coinToQuantity reward
+            }
+        , assets = ApiWalletAssetsBalance
+            { available = ApiT (available ^. #tokens)
+            , total = ApiT (total ^. #tokens)
+            }
+        , state = ApiT progress
+        , tip = tip'
+        }
 
 --------------------- Legacy
 

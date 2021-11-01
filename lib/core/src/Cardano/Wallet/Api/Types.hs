@@ -195,6 +195,10 @@ module Cardano.Wallet.Api.Types
     , ApiSharedWalletPostDataFromAccountPubX (..)
     , ApiSharedWalletPatchData (..)
 
+    -- * Single Address Wallets
+    , ApiSingleAddressWalletPostData (..)
+    , ApiSingleAddressWallet (..)
+
     -- * Polymorphic Types
     , ApiT (..)
     , ApiMnemonicT (..)
@@ -1494,6 +1498,23 @@ newtype ApiSharedWallet = ApiSharedWallet
 data ApiSharedWalletPatchData = ApiSharedWalletPatchData
     { cosigner :: !(ApiT Cosigner)
     , accountPublicKey :: !ApiAccountPublicKey
+    } deriving (Eq, Generic, Show)
+      deriving anyclass NFData
+
+data ApiSingleAddressWalletPostData n = ApiSingleAddressWalletPostData
+    { name :: !(ApiT WalletName)
+    , address :: (ApiT Address, Proxy n)
+    } deriving (Eq, Generic, Show)
+      deriving anyclass NFData
+
+
+data ApiSingleAddressWallet = ApiSingleAddressWallet
+    { id :: !(ApiT WalletId)
+    , name :: !(ApiT WalletName)
+    , balance :: !ApiWalletBalance
+    , assets :: !ApiWalletAssetsBalance
+    , state :: !(ApiT SyncProgress)
+    , tip :: !ApiBlockReference
     } deriving (Eq, Generic, Show)
       deriving anyclass NFData
 
@@ -3253,6 +3274,16 @@ syncProgressOptions = taggedSumTypeOptions defaultSumTypeOptions $
         { _tagFieldName = "status"
         , _contentsFieldName = "progress"
         }
+
+
+{-------------------------------------------------------------------------------
+                             Single Address wallet
+-------------------------------------------------------------------------------}
+
+instance (FromJSON (ApiT Address, Proxy n)) => FromJSON (ApiSingleAddressWalletPostData n) where
+    parseJSON = genericParseJSON defaultRecordTypeOptions
+instance ToJSON ApiSingleAddressWallet where
+    toJSON = genericToJSON defaultRecordTypeOptions
 
 {-------------------------------------------------------------------------------
                              JSON Instances: Byron

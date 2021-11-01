@@ -104,6 +104,8 @@ import Cardano.Wallet.Primitive.AddressDiscovery.Sequential
     ( SeqState )
 import Cardano.Wallet.Primitive.AddressDiscovery.Shared
     ( SharedState )
+import Cardano.Wallet.Primitive.AddressDiscovery.SingleAddress
+    ( SingleAddress )
 import Cardano.Wallet.Primitive.Slotting
     ( neverFails )
 import Cardano.Wallet.Primitive.SyncProgress
@@ -291,6 +293,9 @@ serveWallet
                 multisigApi <- apiLayer txLayerUdefined nl
                     Server.idleWorker
 
+                singleApi <- apiLayer (newTransactionLayer net) nl
+                    Server.idleWorker
+
                 withPoolsMonitoring databaseDir np nl $ \spl -> do
                     startServer
                         proxy
@@ -299,6 +304,7 @@ serveWallet
                         icarusApi
                         shelleyApi
                         multisigApi
+                        singleApi
                         spl
                         ntpClient
                     pure ExitSuccess
@@ -328,15 +334,16 @@ serveWallet
         -> ApiLayer (SeqState n IcarusKey) IcarusKey
         -> ApiLayer (SeqState n ShelleyKey) ShelleyKey
         -> ApiLayer (SharedState n SharedKey) SharedKey
+        -> ApiLayer (SingleAddress n) ShelleyKey
         -> StakePoolLayer
         -> NtpClient
         -> IO ()
-    startServer _proxy socket byron icarus shelley multisig spl ntp = do
+    startServer _proxy socket byron icarus shelley multisig single spl ntp = do
         serverUrl <- getServerUrl tlsConfig socket
         let serverSettings = Warp.defaultSettings & setBeforeMainLoop
                 (beforeMainLoop serverUrl)
         let application = Server.serve (Proxy @(ApiV2 n ApiStakePool)) $
-                server byron icarus shelley multisig spl ntp
+                server byron icarus shelley multisig single spl ntp
         Server.start serverSettings apiServerTracer tlsConfig socket application
 
     withPoolsMonitoring

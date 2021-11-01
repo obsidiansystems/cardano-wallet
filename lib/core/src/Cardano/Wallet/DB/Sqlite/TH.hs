@@ -432,4 +432,11 @@ CosignerKey
         cosignerKeyIndex
     Foreign Wallet OnDeleteCascade cosigner_key cosignerKeyWalletId
     deriving Show Generic
+
+SingleAddressState
+    singleAddressStateWalletId      W.WalletId  sql=wallet_id
+    singleAddressStateAddress       W.Address   sql=address
+
+    Primary singleAddressStateWalletId
+    deriving Show Generic
 |]
