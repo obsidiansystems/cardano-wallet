@@ -503,11 +503,10 @@ type PostAnyAddress n = "addresses"
 -------------------------------------------------------------------------------}
 
 type CoinSelections n =
-    SelectCoins n
+    "wallets" :> SelectCoins n
 
 -- | https://input-output-hk.github.io/cardano-wallet/api/#operation/selectCoins
-type SelectCoins n = "wallets"
-    :> Capture "walletId" (ApiT WalletId)
+type SelectCoins n = Capture "walletId" (ApiT WalletId)
     :> "coin-selections"
     :> "random"
     :> ReqBody '[JSON] (ApiSelectCoinsDataT n)
@@ -522,8 +521,8 @@ type SelectCoins n = "wallets"
 type ShelleyTransactions n =
          ConstructTransaction n
     :<|> SignTransaction n
-    :<|> ListTransactions n
-    :<|> GetTransaction n
+    :<|> "wallets" :> ListTransactions n
+    :<|> "wallets" :> GetTransaction n
     :<|> DeleteTransaction
     :<|> CreateTransactionOld n
     :<|> PostTransactionFeeOld n
@@ -551,8 +550,7 @@ type CreateTransactionOld n = "wallets"
     :> PostAccepted '[JSON] (ApiTransactionT n)
 
 -- | https://input-output-hk.github.io/cardano-wallet/api/#operation/listTransactions
-type ListTransactions n = "wallets"
-    :> Capture "walletId" (ApiT WalletId)
+type ListTransactions n = Capture "walletId" (ApiT WalletId)
     :> "transactions"
     :> QueryParam "minWithdrawal" MinWithdrawal
     :> QueryParam "start" Iso8601Time
@@ -561,8 +559,7 @@ type ListTransactions n = "wallets"
     :> Get '[JSON] [ApiTransactionT n]
 
 -- | https://input-output-hk.github.io/cardano-wallet/api/#operation/getTransaction
-type GetTransaction n = "wallets"
-    :> Capture "walletId" (ApiT WalletId)
+type GetTransaction n = Capture "walletId" (ApiT WalletId)
     :> "transactions"
     :> Capture "transactionId" ApiTxId
     :> Get '[JSON] (ApiTransactionT n)
