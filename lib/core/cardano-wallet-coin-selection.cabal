@@ -139,8 +139,6 @@ library
     -- , wai
     -- , warp
     -- , warp-tls
-    -- TODO: This most likely needs to get patched
-    , wide-word
     -- , x509
     -- , x509-store
     -- , x509-validation
