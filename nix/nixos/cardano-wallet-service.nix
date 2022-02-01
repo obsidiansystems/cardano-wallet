@@ -103,6 +103,23 @@ in
       '';
     };
 
+    serviceUserAndGroup = mkOption {
+      type = types.nullOr (types.submodule {
+        options = {
+          user = mkOption {
+            description = "User";
+            type = types.str;
+          };
+          group = mkOption {
+            description = "User";
+            type = types.str;
+          };
+        };
+      });
+      default = null;
+      description = "User and group to run service. Defaults to null, and the service uses DynamicUser=true.";
+    };
+
     syncTolerance = mkOption {
       type = types.ints.positive;
       default = 300;
@@ -190,10 +207,13 @@ in
       wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
-        DynamicUser = true;
+        DynamicUser = cfg.serviceUserAndGroup == null;
         ExecStart = cfg.command;
         StateDirectory = cfg.database;
-      };
+      } // (if cfg.serviceUserAndGroup == null then {} else {
+        User = cfg.serviceUserAndGroup.user;
+        Group = cfg.serviceUserAndGroup.group;
+      });
 
       environment = {
         CARDANO_NODE_SOCKET_PATH = cfg.nodeSocket;
