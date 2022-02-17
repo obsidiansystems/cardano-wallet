@@ -45,10 +45,10 @@ library
     , bech32-th
     , binary
     , bytestring
-    -- , cardano-addresses
+    , cardano-addresses
     , cardano-api
     , cardano-binary
-    -- , cardano-crypto
+    , cardano-crypto
     -- , cardano-crypto-class
     -- , cardano-crypto-test
     , cardano-numeric
@@ -60,7 +60,7 @@ library
     , cardano-slotting
     , cborg
     , containers
-    -- , contra-tracer
+    , contra-tracer
     , cryptonite
     , data-default
     , data-interval
@@ -71,7 +71,7 @@ library
     -- , either
     , errors
     , exact-combinatorics
-    -- , exceptions
+    , exceptions
     , extra
     -- , fast-logger
     -- , file-embed
@@ -161,7 +161,7 @@ library
     -- shrinkers that can be imported by both the `cardano-wallet-core` and
     -- `cardano-wallet` libraries:
     --
-    -- , QuickCheck
+    , QuickCheck
     -- , cardano-wallet-test-utils
   hs-source-dirs:
       src
@@ -243,7 +243,7 @@ library
       -- Cardano.Wallet.Primitive.Passphrase.Gen
       -- Cardano.Wallet.Primitive.Passphrase.Legacy
       -- Cardano.Wallet.Primitive.Passphrase.Types
-      -- Cardano.Wallet.Primitive.Types
+      Cardano.Wallet.Primitive.Types
       Cardano.Wallet.Primitive.Types.Address
       Cardano.Wallet.Primitive.Types.Coin
       Cardano.Wallet.Primitive.Types.Hash
@@ -261,14 +261,14 @@ library
       -- Cardano.Wallet.Registry
       -- Cardano.Wallet.TokenMetadata.MockServer
       -- Cardano.Wallet.Transaction
-      -- Cardano.Wallet.Unsafe
+      Cardano.Wallet.Unsafe
       Cardano.Wallet.Util
       -- Cardano.Wallet.Version
       -- Cardano.Wallet.Version.TH
       -- Control.Concurrent.Concierge
       -- Control.Monad.Exception.Unchecked
       Control.Monad.Random.Extra
-      -- Crypto.Hash.Utils
+      Crypto.Hash.Utils
       Data.Aeson.Extra
       -- Data.Function.Utils
       -- Data.Time.Text
