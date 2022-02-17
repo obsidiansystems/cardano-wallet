@@ -1,4 +1,4 @@
-name:                cardano-wallet-core
+name:                cardano-wallet-coin-selection
 version:             2022.7.1
 synopsis:            The Wallet Backend for a Cardano node.
 description:         Please see README.md
@@ -306,8 +306,8 @@ library
         --
         -- Use cardano-api:gen to import these generators from cardano-api
       -- Cardano.Api.Gen
-  other-modules:
-      Paths_cardano_wallet_core
+  -- other-modules:
+  --     Paths_cardano_wallet_core
 
 -- test-suite unit
 --   default-language:
