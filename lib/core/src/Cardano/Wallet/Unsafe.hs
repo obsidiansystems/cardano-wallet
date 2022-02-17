@@ -22,7 +22,7 @@ module Cardano.Wallet.Unsafe
     , unsafeFromHex
     , unsafeFromBase64
     , unsafeFromHexFile
-    , unsafeDecodeAddress
+    -- , unsafeDecodeAddress
     , unsafeDecodeHex
     , unsafeFromText
     , unsafeRunExceptT
@@ -58,8 +58,8 @@ import Cardano.Mnemonic
     , mkEntropy
     , mkMnemonic
     )
-import Cardano.Wallet.Api.Types
-    ( DecodeAddress (..) )
+-- import Cardano.Wallet.Api.Types
+--     ( DecodeAddress (..) )
 import Cardano.Wallet.Primitive.Types.Address
     ( Address )
 import Cardano.Wallet.Util
@@ -123,11 +123,11 @@ unsafeFromHexFile :: HasCallStack => FilePath -> IO ByteString
 unsafeFromHexFile = fmap (unsafeFromHex . B8.filter isHexDigit) . B8.readFile
 
 -- | Decode a bech32-encoded 'Text' into an 'Address', or fail.
-unsafeDecodeAddress
-    :: forall n. (HasCallStack, DecodeAddress n)
-    => Text
-    -> Address
-unsafeDecodeAddress = unsafeRight . decodeAddress @n
+-- unsafeDecodeAddress
+--     :: forall n. (HasCallStack, DecodeAddress n)
+--     => Text
+--     -> Address
+-- unsafeDecodeAddress = unsafeRight . decodeAddress @n
 
 -- | Run a decoder on a hex-encoded 'ByteString', or fail.
 unsafeDecodeHex :: HasCallStack => Get a -> ByteString -> a
