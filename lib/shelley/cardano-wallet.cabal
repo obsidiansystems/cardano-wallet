@@ -102,7 +102,7 @@ library
       -- Cardano.Wallet.Shelley
       -- Cardano.Wallet.Shelley.Api.Server
       Cardano.Wallet.Shelley.Compatibility
-      -- Cardano.Wallet.Shelley.Compatibility.Ledger
+      Cardano.Wallet.Shelley.Compatibility.Ledger
       -- Cardano.Wallet.Shelley.Network
       -- Cardano.Wallet.Shelley.Transaction
       -- Cardano.Wallet.Shelley.Launch
