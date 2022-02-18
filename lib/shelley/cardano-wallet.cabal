@@ -93,8 +93,8 @@ library
     , scientific
     , semialign
     , serialise
-    , servant-client
-    , servant-server
+    -- , servant-client
+    -- , servant-server
     , strict-containers
     , strict-non-empty-containers
     , temporary
