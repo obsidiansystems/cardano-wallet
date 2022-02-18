@@ -79,7 +79,7 @@ library
     , random
     , retry
     , serialise
-    , servant-server
+    -- , servant-server
     , strict-containers
     , strict-non-empty-containers
     , temporary
