@@ -237,6 +237,7 @@ import Cardano.Wallet.Shelley.Compatibility.Ledger
     , toWalletTokenPolicyId
     , toWalletTokenQuantity
     )
+{-
 import Cardano.Wallet.Transaction
     ( AnyScript (..)
     , PlutusScriptInfo (..)
@@ -245,6 +246,7 @@ import Cardano.Wallet.Transaction
     , ValidityIntervalExplicit (..)
     , emptyTokenMapWithScripts
     )
+-}
 import Cardano.Wallet.Unsafe
     ( unsafeIntToWord, unsafeMkPercentage )
 import Cardano.Wallet.Util
@@ -1372,7 +1374,6 @@ fromMaryTx tx =
     fromMaryScriptMap =
         Map.map (NativeScript . toWalletScript Policy) .
         Map.mapKeys (toWalletTokenPolicyId . SL.PolicyID)
--}
 getScriptMap
     :: Map TokenPolicyId AnyScript
     -> TokenMap
@@ -1383,6 +1384,7 @@ getScriptMap scriptMap =
     filter (isJust . snd) .
     map (\(policyid, _) -> (policyid, Map.lookup policyid scriptMap) ) .
     toNestedList
+-}
 
 getScriptIntegrityHash
     :: Cardano.Tx era

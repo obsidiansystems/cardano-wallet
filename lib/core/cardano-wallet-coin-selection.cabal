@@ -195,7 +195,7 @@ library
       Cardano.Wallet.CoinSelection.Internal
       Cardano.Wallet.CoinSelection.Internal.Balance
       Cardano.Wallet.CoinSelection.Internal.Collateral
-      -- Cardano.Wallet.CoinSelection.Internal.Context
+      Cardano.Wallet.CoinSelection.Internal.Context
       -- Cardano.Wallet.Compat
       -- Cardano.Wallet.DB
       -- Cardano.Wallet.DB.Pure.Implementation
@@ -242,7 +242,7 @@ library
       -- Cardano.Wallet.Primitive.Passphrase.Current
       -- Cardano.Wallet.Primitive.Passphrase.Gen
       -- Cardano.Wallet.Primitive.Passphrase.Legacy
-      -- Cardano.Wallet.Primitive.Passphrase.Types
+      Cardano.Wallet.Primitive.Passphrase.Types
       Cardano.Wallet.Primitive.Types
       Cardano.Wallet.Primitive.Types.Address
       Cardano.Wallet.Primitive.Types.Coin

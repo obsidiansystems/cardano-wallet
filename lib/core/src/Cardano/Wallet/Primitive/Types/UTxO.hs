@@ -87,8 +87,8 @@ import Control.DeepSeq
     ( NFData (..) )
 import Data.Bifunctor
     ( bimap, first )
-import Data.Delta
-    ( Delta (..) )
+-- import Data.Delta
+--     ( Delta (..) )
 import Data.Functor.Identity
     ( runIdentity )
 import Data.Generics.Internal.VL.Lens
@@ -240,9 +240,9 @@ data DeltaUTxO = DeltaUTxO
     , received :: !UTxO       -- ^ Then receive these additional outputs.
     } deriving (Generic, Eq, Show)
 
-instance Delta DeltaUTxO where
-    type Base DeltaUTxO = UTxO
-    du `apply` u = (u `excluding` excluded du) <> received du
+-- instance Delta DeltaUTxO where
+--     type Base DeltaUTxO = UTxO
+--     du `apply` u = (u `excluding` excluded du) <> received du
 
 -- | Left argument is applied /after/ right argument.
 instance Semigroup DeltaUTxO where
